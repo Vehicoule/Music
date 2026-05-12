@@ -81,6 +81,47 @@ fn source_index_search_filters_by_scope() {
 }
 
 #[test]
+fn source_index_search_falls_back_when_fts_rows_are_missing() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("streambox.sqlite3");
+    upsert_source_index_entries(&path, &[entry("adele", "Rolling in the Deep", "Adele")]).unwrap();
+
+    let connection = Connection::open(&path).unwrap();
+    connection
+        .execute("DELETE FROM source_index_fts", [])
+        .unwrap();
+    drop(connection);
+
+    let results =
+        search_source_index_entries(&path, "rolling in the deep adele", 10, Some("all")).unwrap();
+
+    assert_eq!(results[0].source_id, "adele");
+    assert!(results[0].confidence_score >= 90.0);
+}
+
+#[test]
+fn source_index_clear_removes_table_and_fts_rows() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("streambox.sqlite3");
+    upsert_source_index_entries(&path, &[entry("adele", "Rolling in the Deep", "Adele")]).unwrap();
+
+    streambox_core::db::clear_source_index(&path).unwrap();
+
+    let connection = Connection::open(&path).unwrap();
+    let table_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM source_index", [], |row| row.get(0))
+        .unwrap();
+    let fts_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM source_index_fts", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+
+    assert_eq!(table_count, 0);
+    assert_eq!(fts_count, 0);
+}
+
+#[test]
 fn source_index_schema_rebuilds_legacy_payload_table() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("streambox.sqlite3");

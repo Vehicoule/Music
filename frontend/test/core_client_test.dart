@@ -143,6 +143,27 @@ void main() {
   });
 
   test('rust source-index cache hits require backend resolution', () async {
+    final nativeCore = _SourceIndexNativeCore({
+      'ok': true,
+      'data': [
+        {
+          'source_provider': 'youtube',
+          'source_id': 'abc123',
+          'source_url': 'https://music.youtube.com/watch?v=abc123',
+          'source_kind': 'song',
+          'title': 'Cached Song',
+          'artist': 'Cached Artist',
+          'album': 'Cached Album',
+          'duration_seconds': 180,
+          'confidence_score': 95,
+          'rank_reason': 'exact',
+          'raw_title': 'Cached Song - Cached Artist',
+          'canonical_title': 'Cached Song',
+          'canonical_artist': 'Cached Artist',
+          'parse_source': 'structured',
+        },
+      ],
+    });
     final rustClient = RustCoreClient(
       fallbackApiClient: ApiClient(
         baseUrl: 'http://127.0.0.1:8000',
@@ -150,27 +171,7 @@ void main() {
           fail('FastAPI should not be called for a high-confidence cache hit');
         }),
       ),
-      nativeCore: _SourceIndexNativeCore({
-        'ok': true,
-        'data': [
-          {
-            'source_provider': 'youtube',
-            'source_id': 'abc123',
-            'source_url': 'https://music.youtube.com/watch?v=abc123',
-            'source_kind': 'song',
-            'title': 'Cached Song',
-            'artist': 'Cached Artist',
-            'album': 'Cached Album',
-            'duration_seconds': 180,
-            'confidence_score': 95,
-            'rank_reason': 'exact',
-            'raw_title': 'Cached Song - Cached Artist',
-            'canonical_title': 'Cached Song',
-            'canonical_artist': 'Cached Artist',
-            'parse_source': 'structured',
-          },
-        ],
-      }),
+      nativeCore: nativeCore,
     );
 
     final response = await rustClient.discover('cached song', scope: 'songs');
@@ -179,6 +180,59 @@ void main() {
     expect(item.track?.title, 'Cached Song');
     expect(item.track?.sourceUrl, 'https://music.youtube.com/watch?v=abc123');
     expect(item.source, isNull);
+    expect(nativeCore.searchCalls, 1);
+  });
+
+  test('rust source-index is skipped for uncacheable discover scopes', () async {
+    final nativeCore = _SourceIndexNativeCore({
+      'ok': true,
+      'data': [
+        {
+          'source_provider': 'youtube',
+          'source_id': 'abc123',
+          'source_url': 'https://music.youtube.com/watch?v=abc123',
+          'source_kind': 'song',
+          'title': 'Cached Song',
+          'artist': 'Cached Artist',
+          'album': 'Cached Album',
+          'duration_seconds': 180,
+          'confidence_score': 95,
+          'rank_reason': 'exact',
+          'raw_title': 'Cached Song - Cached Artist',
+          'canonical_title': 'Cached Song',
+          'canonical_artist': 'Cached Artist',
+          'parse_source': 'structured',
+        },
+      ],
+    });
+    final requestedScopes = <String>[];
+    final rustClient = RustCoreClient(
+      fallbackApiClient: ApiClient(
+        baseUrl: 'http://127.0.0.1:8000',
+        httpClient: MockClient((request) async {
+          requestedScopes.add(request.url.queryParameters['scope']!);
+          return http.Response(
+            jsonEncode({
+              'query': request.url.queryParameters['q'],
+              'mode': 'metadata',
+              'scope': request.url.queryParameters['scope'],
+              'items': [],
+              'warnings': [],
+            }),
+            200,
+          );
+        }),
+      ),
+      nativeCore: nativeCore,
+    );
+
+    for (final scope in ['all', 'albums', 'artists']) {
+      final response = await rustClient.discover('cached song', scope: scope);
+      expect(response.scope, scope);
+    }
+
+    expect(nativeCore.searchCalls, 0);
+    expect(requestedScopes, ['all', 'albums', 'artists']);
   });
 
   test(
@@ -1298,15 +1352,17 @@ class _DbHealthNativeCore extends StaticNativeCore {
 }
 
 class _SourceIndexNativeCore extends StaticNativeCore {
-  const _SourceIndexNativeCore(this.searchResponse)
+  _SourceIndexNativeCore(this.searchResponse)
       : super(const NativeCoreHealth(available: true, platform: 'test'));
 
   final Map<String, dynamic> searchResponse;
+  var searchCalls = 0;
 
   @override
   Future<Map<String, dynamic>> sourceIndexSearchJson(
     Map<String, dynamic> input,
   ) async {
+    searchCalls += 1;
     return searchResponse;
   }
 }
