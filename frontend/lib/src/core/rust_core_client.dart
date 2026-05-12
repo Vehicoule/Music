@@ -7,8 +7,9 @@ class RustCoreClient implements CoreClient {
   const RustCoreClient({
     required this.nativeCore,
     required this.fallbackApiClient,
-    this.dbPath,
-  });
+    String? dbPath,
+    String? databasePath,
+  }) : dbPath = dbPath ?? databasePath;
 
   final NativeCore nativeCore;
   final ApiClient fallbackApiClient;
@@ -131,7 +132,7 @@ class RustCoreClient implements CoreClient {
 
   @override
   Future<void> addHistory(PlaybackItem item) async {
-    await _requireOk(await nativeCore.historyAddJson({
+    _requireOk(await nativeCore.historyAddJson({
       'db_path': dbPath,
       'item': item.toJson(),
     }));
@@ -139,7 +140,7 @@ class RustCoreClient implements CoreClient {
 
   @override
   Future<List<PlaybackItem>> history() async {
-    final response = await _requireOk(await nativeCore.historyListJson({
+    final response = _requireOk(await nativeCore.historyListJson({
       'db_path': dbPath,
     }));
     return (response['data'] as List<dynamic>? ?? [])
@@ -148,7 +149,7 @@ class RustCoreClient implements CoreClient {
   }
 
   Future<void> clearHistory() async {
-    await _requireOk(await nativeCore.historyClearJson({
+    _requireOk(await nativeCore.historyClearJson({
       'db_path': dbPath,
     }));
   }

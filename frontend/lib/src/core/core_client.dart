@@ -1,7 +1,6 @@
 import '../api_client.dart';
 import '../models.dart';
 import '../native/native_core.dart';
-import 'rust_core_client.dart';
 
 abstract class CoreClient {
   Future<DiscoverResponse> discover(String query, {String scope = 'all'});
@@ -134,6 +133,37 @@ class HybridCoreClient implements CoreClient {
   }
 
   @override
+  Future<Playlist> updatePlaylist(
+    String id, {
+    String? name,
+    String? description,
+    List<PlaybackItem>? tracks,
+  }) {
+    return _rustLocalOrApi(
+      (client) => client.updatePlaylist(
+        id,
+        name: name,
+        description: description,
+        tracks: tracks,
+      ),
+      (client) => client.updatePlaylist(
+        id,
+        name: name,
+        description: description,
+        tracks: tracks,
+      ),
+    );
+  }
+
+  @override
+  Future<void> deletePlaylist(String id) {
+    return _rustLocalOrApi(
+      (client) => client.deletePlaylist(id),
+      (client) => client.deletePlaylist(id),
+    );
+  }
+
+  @override
   Future<List<Favorite>> favorites() {
     return _rustLocalOrApi(
       (client) => client.favorites(),
@@ -146,6 +176,14 @@ class HybridCoreClient implements CoreClient {
     return _rustLocalOrApi(
       (client) => client.favorite(item),
       (client) => client.favorite(item),
+    );
+  }
+
+  @override
+  Future<void> unfavorite(String favoriteId) {
+    return _rustLocalOrApi(
+      (client) => client.unfavorite(favoriteId),
+      (client) => client.unfavorite(favoriteId),
     );
   }
 
@@ -170,18 +208,4 @@ class HybridCoreClient implements CoreClient {
     return rustCoreClient?.nativeHealth() ?? nativeCore.health();
   }
 
-  Future<T> _tryRust<T>(
-    Future<T>? Function() rustCall,
-    Future<T> Function() apiCall,
-  ) async {
-    final rustFuture = rustCall();
-    if (rustFuture == null) {
-      return apiCall();
-    }
-    try {
-      return await rustFuture;
-    } catch (_) {
-      return apiCall();
-    }
-  }
 }
