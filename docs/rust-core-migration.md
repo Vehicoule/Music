@@ -9,37 +9,70 @@ method.
 ## Current Backend Roles
 
 - **Rust core** is the target runtime for offline/local app logic and native
-  integration. Today it provides native health/version diagnostics through FFI.
+  integration. Today it provides native health/version diagnostics and Rust-backed
+  local library operations for playlists, favorites, and history through FFI.
 - **FastAPI** is the compatibility fallback for network metadata, source
   resolution, local profile data, and debug endpoints during migration.
 - **Flutter `HybridCoreClient`** should prefer a Rust-backed implementation when
   one exists and fall back to FastAPI for unmigrated features.
 
-## `CoreClient` FastAPI-Only Methods
+## `CoreClient` Migration Status
 
-As of this migration note, every `CoreClient` feature method except
-`nativeHealth()` is still serviced by FastAPI through `RustCoreClient`'s
-`fallbackApiClient`:
+As of this migration note, `HybridCoreClient` can route local-library methods to
+Rust first and fall back to FastAPI when the Rust path fails or is disabled.
+Network metadata, source resolution, and runtime diagnostics still use FastAPI
+through `RustCoreClient`'s `fallbackApiClient`:
 
 | `CoreClient` method | FastAPI endpoint(s) / responsibility | Migration status |
 | --- | --- | --- |
+| `nativeHealth()` | Rust FFI health check with non-Rust fallback | Rust-backed |
+| `playlists()` | `GET /api/playlists` local playlists | Rust-backed with FastAPI fallback |
+| `createPlaylist(name, tracks)` | `POST /api/playlists` local playlist creation | Rust-backed with FastAPI fallback |
+| `updatePlaylist(id, name, description, tracks)` | `PATCH /api/playlists/{playlist_id}` local playlist updates | Rust-backed with FastAPI fallback |
+| `deletePlaylist(id)` | `DELETE /api/playlists/{playlist_id}` local playlist deletion | Rust-backed with FastAPI fallback |
+| `favorites()` | `GET /api/favorites` local favorites | Rust-backed with FastAPI fallback |
+| `favorite(item)` | `POST /api/favorites` local favorite writes | Rust-backed with FastAPI fallback |
+| `unfavorite(favoriteId)` | `DELETE /api/favorites/{favorite_id}` local favorite deletion | Rust-backed with FastAPI fallback |
+| `addHistory(item)` | `POST /api/history` playback history writes | Rust-backed with FastAPI fallback |
+| `history()` | `GET /api/history` playback history reads | Rust-backed with FastAPI fallback |
 | `discover(query, scope)` | `GET /api/discover` discovery search | FastAPI-only |
 | `discoverPlayable(query)` | `GET /api/discover/playable` playable discovery | FastAPI-only |
-| `runtimeDebug()` | `GET /api/debug/runtime` backend/runtime diagnostics | FastAPI-only |
-| `albumDetail(browseId)` | `GET /api/albums/{browse_id}` album metadata | FastAPI-only |
-| `artistDetail(browseId)` | `GET /api/artists/{browse_id}` artist metadata | FastAPI-only |
 | `resolve(track, adapters, sourceUrl)` | `POST /api/resolve` source resolution | FastAPI-only |
 | `sources()` | `GET /api/sources` adapter capabilities | FastAPI-only |
-| `playlists()` | `GET /api/playlists` local playlists | FastAPI-only |
-| `createPlaylist(name, tracks)` | `POST /api/playlists` local playlist creation | FastAPI-only |
-| `favorites()` | `GET /api/favorites` local favorites | FastAPI-only |
-| `favorite(item)` | `POST /api/favorites` local favorite writes | FastAPI-only |
-| `addHistory(item)` | `POST /api/history` playback history writes | FastAPI-only |
-| `history()` | `GET /api/history` playback history reads | FastAPI-only |
-| `nativeHealth()` | Rust FFI health check with non-Rust fallback | Rust-backed |
+| `albumDetail(browseId)` | `GET /api/albums/{browse_id}` album metadata | FastAPI-only |
+| `artistDetail(browseId)` | `GET /api/artists/{browse_id}` artist metadata | FastAPI-only |
+| `runtimeDebug()` | `GET /api/debug/runtime` backend/runtime diagnostics | Mostly FastAPI-backed |
 
-When a method becomes Rust-backed, update this table in the same change that
+When a method changes migration status, update this table in the same change that
 switches Flutter routing so the fallback surface remains visible.
+
+## Source Resolution Ownership
+
+`resolve()` and `sources()` remain FastAPI-backed for now. Flutter should keep
+routing source resolution requests through `POST /api/resolve` and source
+capability discovery through `GET /api/sources` until a replacement boundary is
+designed, implemented, and covered by contract tests.
+
+FastAPI continues to own source resolution during this migration phase because:
+
+- yt-dlp integration is external/process-based rather than an in-process Rust
+  library boundary today.
+- Provider behavior changes frequently, so keeping the current FastAPI adapter
+  layer avoids prematurely freezing volatile provider semantics into the Rust
+  core.
+- Source adapters may become plugins later, and the migration should not bake in
+  an ownership model before the plugin protocol is defined.
+
+Future source-resolution ownership must be decided explicitly. The supported
+options to evaluate are:
+
+- Keep FastAPI as an optional source service behind the existing HTTP contract.
+- Build a Rust plugin host that owns source adapter discovery and resolution.
+- Shell out from Rust to provider tools while defining Rust-owned process, cache,
+  error, and capability contracts.
+
+Do not remove FastAPI source routes until the replacement boundary is documented
+and contract tests prove compatibility for `resolve()` and `sources()` behavior.
 
 ## Migration Checklist
 
@@ -61,11 +94,16 @@ areas are stable:
 
 ### Feature Migration
 
-- [ ] Define Rust-owned SQLite migrations for playlists, favorites, and history.
-- [ ] Port playlist read/create/update behavior and preserve API contract
-      fixtures.
-- [ ] Port favorites read/write/delete behavior and preserve identity semantics.
-- [ ] Port playback history writes and bounded reads.
+- [x] Define Rust-owned SQLite migrations for playlists, favorites, and history.
+- [ ] Playlists: Rust read/create/update/delete behavior is wired through
+      Flutter with FastAPI fallback; contract fixtures and explicit fallback
+      coverage still need to be preserved before removing FastAPI routes.
+- [ ] Favorites: Rust read/write/delete behavior is wired through Flutter with
+      FastAPI fallback; identity/de-duplication contract coverage and explicit
+      fallback tests still need to be completed.
+- [ ] History: Rust writes and bounded reads are wired through Flutter with
+      FastAPI fallback; retention/order contract coverage and explicit fallback
+      tests still need to be completed.
 - [ ] Decide whether discovery/search stays network-backed, becomes plugin
       backed, or remains a FastAPI-only optional service.
 - [ ] Port source capability listing and source resolution or define the plugin
@@ -85,6 +123,7 @@ route's feature area:
 - [ ] Contract tests exist for the Rust/native replacement.
 - [ ] Local data migration or compatibility handling is documented.
 - [ ] Release notes identify any user-visible migration impact.
-- [ ] The `CoreClient` FastAPI-only table above no longer lists the method.
+- [ ] The `CoreClient` migration status table above no longer lists the method
+      as FastAPI-backed or requiring FastAPI fallback.
 
 Until these gates are met, keep the existing FastAPI app and route tests intact.

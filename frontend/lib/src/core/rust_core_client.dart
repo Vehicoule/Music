@@ -15,6 +15,8 @@ class RustCoreClient implements CoreClient {
   final ApiClient fallbackApiClient;
   final String? dbPath;
 
+  String get databasePath => dbPath ?? defaultRustDatabasePath;
+
   Future<Map<String, dynamic>> echoJson(Map<String, dynamic> input) {
     return nativeCore.echoJson(input);
   }
@@ -128,7 +130,9 @@ class RustCoreClient implements CoreClient {
 
   @override
   Future<List<Playlist>> playlists() async {
-    final response = await nativeCore.playlistsListJson({});
+    final response = await nativeCore.playlistsListJson({
+      if (dbPath != null) 'database_path': dbPath,
+    });
     final payload = _unwrapJsonProtocol(response);
     return (payload as List<dynamic>)
         .map((item) => Playlist.fromJson(item as Map<String, dynamic>))
@@ -138,6 +142,7 @@ class RustCoreClient implements CoreClient {
   @override
   Future<Playlist> createPlaylist(String name, List<PlaybackItem> tracks) async {
     final response = await nativeCore.playlistsCreateJson({
+      if (dbPath != null) 'database_path': dbPath,
       'name': name,
       'tracks': tracks.map((item) => item.toJson()).toList(),
     });
@@ -154,6 +159,7 @@ class RustCoreClient implements CoreClient {
     List<PlaybackItem>? tracks,
   }) async {
     final response = await nativeCore.playlistsUpdateJson({
+      if (dbPath != null) 'database_path': dbPath,
       'id': id,
       if (name != null) 'name': name,
       if (description != null) 'description': description,
@@ -167,7 +173,10 @@ class RustCoreClient implements CoreClient {
 
   @override
   Future<void> deletePlaylist(String id) async {
-    final response = await nativeCore.playlistsDeleteJson({'id': id});
+    final response = await nativeCore.playlistsDeleteJson({
+      if (dbPath != null) 'database_path': dbPath,
+      'id': id,
+    });
     _unwrapJsonProtocol(response);
   }
 
@@ -224,6 +233,17 @@ class RustCoreClient implements CoreClient {
 
   @override
   Future<NativeCoreHealth> nativeHealth() => nativeCore.health();
+
+  @override
+  Future<NativeDbHealth> nativeDbHealth() async {
+    try {
+      return NativeDbHealth.fromProtocol(
+        await nativeCore.dbHealthJson(databasePath),
+      );
+    } catch (error) {
+      return NativeDbHealth.unavailable(error);
+    }
+  }
 
   dynamic _unwrapJsonProtocol(Map<String, dynamic> response) {
     if (response['ok'] == true) {

@@ -29,6 +29,7 @@ abstract class CoreClient {
   Future<void> addHistory(PlaybackItem item);
   Future<List<PlaybackItem>> history();
   Future<NativeCoreHealth> nativeHealth();
+  Future<NativeDbHealth> nativeDbHealth();
 }
 
 class CoreClientRoutingConfig {
@@ -38,6 +39,8 @@ class CoreClientRoutingConfig {
 
   final bool useRustLocalLibrary;
 }
+
+const defaultRustDatabasePath = './data/streambox.sqlite3';
 
 class HybridCoreClient implements CoreClient {
   HybridCoreClient({
@@ -208,4 +211,18 @@ class HybridCoreClient implements CoreClient {
     return rustCoreClient?.nativeHealth() ?? nativeCore.health();
   }
 
+  @override
+  Future<NativeDbHealth> nativeDbHealth() async {
+    final rustClient = rustCoreClient;
+    if (rustClient != null) {
+      return rustClient.nativeDbHealth();
+    }
+    try {
+      return NativeDbHealth.fromProtocol(
+        await nativeCore.dbHealthJson(defaultRustDatabasePath),
+      );
+    } catch (error) {
+      return NativeDbHealth.unavailable(error);
+    }
+  }
 }

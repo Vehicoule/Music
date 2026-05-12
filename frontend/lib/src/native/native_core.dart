@@ -28,14 +28,97 @@ class NativeCoreHealth {
 
   String get diagnosticLabel {
     if (available) {
-      return 'Rust core: ${version ?? 'available'} (${platform ?? 'unknown platform'})';
+      return 'Rust core availability: available '
+          '(${version ?? 'unknown version'})';
     }
-    return 'Rust core unavailable: ${error ?? 'native library not loaded'}';
+    return 'Rust core availability: unavailable '
+        '(${error ?? 'native library not loaded'})';
+  }
+}
+
+class NativeDbHealth {
+  const NativeDbHealth({
+    required this.available,
+    this.path,
+    this.schemaVersion,
+    this.userVersion,
+    this.foreignKeysEnabled,
+    this.error,
+  });
+
+  final bool available;
+  final String? path;
+  final int? schemaVersion;
+  final int? userVersion;
+  final bool? foreignKeysEnabled;
+  final String? error;
+
+  factory NativeDbHealth.fromJson(Map<String, dynamic> json) {
+    return NativeDbHealth(
+      available: true,
+      path: json['path'] as String?,
+      schemaVersion: (json['schema_version'] as num?)?.toInt(),
+      userVersion: (json['user_version'] as num?)?.toInt(),
+      foreignKeysEnabled: json['foreign_keys_enabled'] as bool?,
+    );
+  }
+
+  factory NativeDbHealth.fromProtocol(Map<String, dynamic> response) {
+    if (response['ok'] == true) {
+      final data = response['data'];
+      if (data is Map<String, dynamic>) {
+        return NativeDbHealth.fromJson(data);
+      }
+      return const NativeDbHealth(
+        available: false,
+        error: 'Rust DB health returned invalid data',
+      );
+    }
+    final error = response['error'];
+    if (error is Map<String, dynamic>) {
+      return NativeDbHealth(
+        available: false,
+        error: error['message'] as String? ??
+            error['code'] as String? ??
+            'Rust DB health unavailable',
+      );
+    }
+    return const NativeDbHealth(
+      available: false,
+      error: 'Rust DB health unavailable',
+    );
+  }
+
+  factory NativeDbHealth.unavailable(Object error) {
+    return NativeDbHealth(
+      available: false,
+      error: error.toString(),
+    );
+  }
+
+  String _formatBool(bool? value) {
+    if (value == null) {
+      return 'unknown';
+    }
+    return value ? 'yes' : 'no';
+  }
+
+  List<String> get diagnosticLabels {
+    if (!available) {
+      return ['Rust DB health unavailable: ${error ?? 'native request failed'}'];
+    }
+    return [
+      'DB path: ${path ?? 'unknown'}',
+      'Schema version: ${schemaVersion?.toString() ?? 'unknown'}',
+      'User version: ${userVersion?.toString() ?? 'unknown'}',
+      'Foreign keys enabled: ${_formatBool(foreignKeysEnabled)}',
+    ];
   }
 }
 
 abstract class NativeCore {
   Future<NativeCoreHealth> health();
+  Future<Map<String, dynamic>> dbHealthJson(String databasePath);
   Future<Map<String, dynamic>> echoJson(Map<String, dynamic> input);
   Future<Map<String, dynamic>> historyListJson(Map<String, dynamic> input);
   Future<Map<String, dynamic>> historyAddJson(Map<String, dynamic> input);
@@ -66,6 +149,11 @@ class StaticNativeCore implements NativeCore {
 
   @override
   Future<NativeCoreHealth> health() async => value;
+
+  @override
+  Future<Map<String, dynamic>> dbHealthJson(String databasePath) async {
+    return _unsupported();
+  }
 
   @override
   Future<Map<String, dynamic>> echoJson(Map<String, dynamic> input) async {
@@ -203,6 +291,15 @@ class FfiNativeCore implements NativeCore {
         error: exception.toString(),
       );
     }
+  }
+
+  @override
+  Future<Map<String, dynamic>> dbHealthJson(String databasePath) async {
+    return _callJson(
+      _openLibrary(),
+      'streambox_db_health_json',
+      {'path': databasePath},
+    );
   }
 
   @override
