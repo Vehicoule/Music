@@ -8,7 +8,8 @@ pub mod playlists;
 
 pub use models::{CoreHealth, HealthJson, PlatformInfo};
 
-use serde_json::Value;
+pub const CORE_VERSION: &str = "streambox-core 0.1.0";
+pub const CORE_API_VERSION: &str = "0.1.0";
 
 pub fn version() -> &'static str {
     CORE_VERSION
