@@ -1,13 +1,11 @@
 # Streambox API Contracts
 
 This document freezes the current FastAPI contract while the app migrates to a
-serverless native Rust core. During migration, Flutter may call Rust for
-migrated features and FastAPI for unmigrated features, but these request,
-response, error, and timestamp shapes remain the compatibility baseline.
-
-Contract fixtures for local profile data live in `docs/api-contract-fixtures/`.
-They are intentionally checked in so FastAPI and Rust implementations can share
-one concrete set of examples while Flutter continues to decode the same JSON.
+serverless native Rust core. FastAPI is a legacy fallback backend during this
+migration: Flutter may call Rust for migrated features and FastAPI for
+unmigrated features, but these response shapes remain the compatibility
+baseline. Do not remove a FastAPI route until Flutter no longer depends on the
+matching contract.
 
 ## Search And Discovery
 
@@ -190,13 +188,6 @@ not emit Unix epoch numbers in JSON responses.
 The Rust implementation must be wire-compatible with FastAPI for every endpoint
 listed above:
 
-1. Use the same paths, methods, status codes, and content type.
-2. Accept the same required and optional request fields, including FastAPI
-   defaults for omitted optional fields.
-3. Emit the same response field names, nesting, timestamp format, and default
-   values represented in `docs/api-contract-fixtures/`.
-4. Preserve ordering guarantees for list endpoints.
-5. Preserve the `detail` error envelope for 4xx/5xx responses.
-6. Keep any additional Rust-only fields optional and non-breaking for Flutter;
-   never remove or rename fields currently emitted by FastAPI without updating
-   Flutter and these fixtures together.
+These are the first features planned for migration to Rust-owned SQLite.
+
+See [Rust Core Migration](rust-core-migration.md) for the current FastAPI-only `CoreClient` surface, migration checklist, and decommission gates.
