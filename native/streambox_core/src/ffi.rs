@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 
 use crate::error::CoreError;
 use crate::models::EchoPayload;
-use crate::{health_json, platform_info, version};
+use crate::{health_json, platform_info, playlists, version};
 
 #[no_mangle]
 pub extern "C" fn streambox_version() -> *mut c_char {
@@ -32,10 +32,59 @@ pub unsafe extern "C" fn streambox_echo_json(input_json: *const c_char) -> *mut 
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn streambox_playlists_list_json(input_json: *const c_char) -> *mut c_char {
+    match read_json(input_json) {
+        Ok(payload) => match playlists::list(payload) {
+            Ok(playlists) => ok_json(playlists),
+            Err(error) => error_json(error),
+        },
+        Err(error) => error_json(error),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn streambox_playlists_create_json(input_json: *const c_char) -> *mut c_char {
+    match read_json(input_json) {
+        Ok(payload) => match playlists::create(payload) {
+            Ok(playlist) => ok_json(playlist),
+            Err(error) => error_json(error),
+        },
+        Err(error) => error_json(error),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn streambox_playlists_delete_json(input_json: *const c_char) -> *mut c_char {
+    match read_json(input_json) {
+        Ok(payload) => match playlists::delete(payload) {
+            Ok(()) => ok_json(json!({})),
+            Err(error) => error_json(error),
+        },
+        Err(error) => error_json(error),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn streambox_playlists_update_json(input_json: *const c_char) -> *mut c_char {
+    match read_json(input_json) {
+        Ok(payload) => match playlists::update(payload) {
+            Ok(playlist) => ok_json(playlist),
+            Err(error) => error_json(error),
+        },
+        Err(error) => error_json(error),
+    }
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn streambox_string_free(value: *mut c_char) {
     if !value.is_null() {
         let _ = CString::from_raw(value);
     }
+}
+
+fn read_json<T: serde::de::DeserializeOwned>(input_json: *const c_char) -> Result<T, CoreError> {
+    let value = read_json_value(input_json)?;
+    serde_json::from_value(value).map_err(|error| CoreError::new("invalid_json", error.to_string()))
 }
 
 fn read_json_value(input_json: *const c_char) -> Result<Value, CoreError> {

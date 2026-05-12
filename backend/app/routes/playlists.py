@@ -48,6 +48,14 @@ async def update_playlist(playlist_id: str, payload: PlaylistUpdate, db: DbDep) 
     return current
 
 
+@router.delete("/{playlist_id}", status_code=204)
+async def delete_playlist(playlist_id: str, db: DbDep) -> None:
+    with db.connect() as connection:
+        cursor = connection.execute("DELETE FROM playlists WHERE id = ?", (playlist_id,))
+    if cursor.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+
+
 def _load_playlist(db: DbDep, playlist_id: str) -> Playlist:
     with db.connect() as connection:
         row = connection.execute("SELECT * FROM playlists WHERE id = ?", (playlist_id,)).fetchone()

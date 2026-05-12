@@ -92,6 +92,28 @@ class ApiClient {
     return Playlist.fromJson(payload);
   }
 
+  Future<Playlist> updatePlaylist(
+    String id, {
+    String? name,
+    String? description,
+    List<PlaybackItem>? tracks,
+  }) async {
+    final payload = await _putJson(
+      Uri.parse('$baseUrl/api/playlists/$id'),
+      {
+        if (name != null) 'name': name,
+        if (description != null) 'description': description,
+        if (tracks != null)
+          'tracks': tracks.map((item) => item.toJson()).toList(),
+      },
+    );
+    return Playlist.fromJson(payload);
+  }
+
+  Future<void> deletePlaylist(String id) async {
+    await _deleteJson(Uri.parse('$baseUrl/api/playlists/$id'));
+  }
+
   Future<List<Favorite>> favorites() async {
     final payload = await _getJson(Uri.parse('$baseUrl/api/favorites'));
     return (payload as List<dynamic>)
@@ -126,6 +148,20 @@ class ApiClient {
       headers: {'content-type': 'application/json'},
       body: jsonEncode(payload),
     );
+    return _decode(response);
+  }
+
+  Future<dynamic> _putJson(Uri uri, Object payload) async {
+    final response = await _httpClient.put(
+      uri,
+      headers: {'content-type': 'application/json'},
+      body: jsonEncode(payload),
+    );
+    return _decode(response);
+  }
+
+  Future<dynamic> _deleteJson(Uri uri) async {
+    final response = await _httpClient.delete(uri);
     return _decode(response);
   }
 

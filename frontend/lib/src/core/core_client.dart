@@ -16,6 +16,13 @@ abstract class CoreClient {
   Future<List<AdapterCapability>> sources();
   Future<List<Playlist>> playlists();
   Future<Playlist> createPlaylist(String name, List<PlaybackItem> tracks);
+  Future<Playlist> updatePlaylist(
+    String id, {
+    String? name,
+    String? description,
+    List<PlaybackItem>? tracks,
+  });
+  Future<void> deletePlaylist(String id);
   Future<List<Favorite>> favorites();
   Future<void> favorite(PlaybackItem item);
   Future<void> addHistory(PlaybackItem item);
@@ -83,14 +90,78 @@ class HybridCoreClient implements CoreClient {
   }
 
   @override
-  Future<List<Playlist>> playlists() {
-    return rustCoreClient?.playlists() ?? apiClient.playlists();
+  Future<List<Playlist>> playlists() async {
+    final rustClient = rustCoreClient;
+    if (rustClient != null) {
+      try {
+        return await rustClient.playlists();
+      } on NativeCoreUnsupportedException {
+        // Fall through to FastAPI while playlist support is migrated.
+      } on NativeCoreProtocolException {
+        // Fall through to FastAPI for controlled native protocol failures.
+      }
+    }
+    return apiClient.playlists();
   }
 
   @override
-  Future<Playlist> createPlaylist(String name, List<PlaybackItem> tracks) {
-    return rustCoreClient?.createPlaylist(name, tracks) ??
-        apiClient.createPlaylist(name, tracks);
+  Future<Playlist> createPlaylist(String name, List<PlaybackItem> tracks) async {
+    final rustClient = rustCoreClient;
+    if (rustClient != null) {
+      try {
+        return await rustClient.createPlaylist(name, tracks);
+      } on NativeCoreUnsupportedException {
+        // Fall through to FastAPI while playlist support is migrated.
+      } on NativeCoreProtocolException {
+        // Fall through to FastAPI for controlled native protocol failures.
+      }
+    }
+    return apiClient.createPlaylist(name, tracks);
+  }
+
+  @override
+  Future<Playlist> updatePlaylist(
+    String id, {
+    String? name,
+    String? description,
+    List<PlaybackItem>? tracks,
+  }) async {
+    final rustClient = rustCoreClient;
+    if (rustClient != null) {
+      try {
+        return await rustClient.updatePlaylist(
+          id,
+          name: name,
+          description: description,
+          tracks: tracks,
+        );
+      } on NativeCoreUnsupportedException {
+        // Fall through to FastAPI while playlist support is migrated.
+      } on NativeCoreProtocolException {
+        // Fall through to FastAPI for controlled native protocol failures.
+      }
+    }
+    return apiClient.updatePlaylist(
+      id,
+      name: name,
+      description: description,
+      tracks: tracks,
+    );
+  }
+
+  @override
+  Future<void> deletePlaylist(String id) async {
+    final rustClient = rustCoreClient;
+    if (rustClient != null) {
+      try {
+        return await rustClient.deletePlaylist(id);
+      } on NativeCoreUnsupportedException {
+        // Fall through to FastAPI while playlist support is migrated.
+      } on NativeCoreProtocolException {
+        // Fall through to FastAPI for controlled native protocol failures.
+      }
+    }
+    return apiClient.deletePlaylist(id);
   }
 
   @override
