@@ -17,6 +17,13 @@ abstract class CoreClient {
   Future<List<AdapterCapability>> sources();
   Future<List<Playlist>> playlists();
   Future<Playlist> createPlaylist(String name, List<PlaybackItem> tracks);
+  Future<Playlist> updatePlaylist(
+    String id, {
+    String? name,
+    String? description,
+    List<PlaybackItem>? tracks,
+  });
+  Future<void> deletePlaylist(String id);
   Future<List<Favorite>> favorites();
   Future<void> favorite(PlaybackItem item);
   Future<void> addHistory(PlaybackItem item);

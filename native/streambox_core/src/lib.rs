@@ -3,6 +3,7 @@ pub mod error;
 pub mod ffi;
 pub mod history;
 pub mod models;
+pub mod playlists;
 
 pub use models::{CoreHealth, HealthJson, PlatformInfo};
 
