@@ -20,6 +20,7 @@ fn playlist_ffi_json_matches_fastapi_fixture_shapes() {
     let created = call_json(streambox_playlists_create_json, create_request);
     assert_eq!(created["ok"], true);
     assert_same_shape(&created["data"], &create_fixture["response"]);
+    assert_field_names(&created["data"], &create_fixture["response"]);
     assert_eq!(created["data"]["name"], create_fixture["response"]["name"]);
     assert_eq!(
         created["data"]["tracks"][0]["track"]["canonical_artist"],
@@ -32,6 +33,7 @@ fn playlist_ffi_json_matches_fastapi_fixture_shapes() {
     );
     assert_eq!(listed["ok"], true);
     assert_same_shape(&listed["data"], &list_fixture["response"]);
+    assert_field_names(&listed["data"], &list_fixture["response"]);
 
     let updated = call_json(
         streambox_playlists_update_json,
@@ -45,6 +47,7 @@ fn playlist_ffi_json_matches_fastapi_fixture_shapes() {
     );
     assert_eq!(updated["ok"], true);
     assert_same_shape(&updated["data"], &create_fixture["response"]);
+    assert_field_names(&updated["data"], &create_fixture["response"]);
     assert_eq!(updated["data"]["name"], "Updated road trip");
 
     let deleted = call_json(
@@ -70,6 +73,7 @@ fn favorites_ffi_json_matches_fastapi_fixture_shapes() {
     );
     assert_eq!(added["ok"], true);
     assert_same_shape(&added["data"], &add_fixture["response"]);
+    assert_field_names(&added["data"], &add_fixture["response"]);
     assert_eq!(
         added["data"]["item"]["track"]["canonical_title"],
         "Fixture Song"
@@ -81,6 +85,7 @@ fn favorites_ffi_json_matches_fastapi_fixture_shapes() {
     );
     assert_eq!(listed["ok"], true);
     assert_same_shape(&listed["data"], &list_fixture["response"]);
+    assert_field_names(&listed["data"], &list_fixture["response"]);
 
     let removed = call_json(
         streambox_favorites_remove_json,
@@ -105,11 +110,34 @@ fn history_ffi_json_matches_fastapi_fixture_shapes() {
     );
     assert_eq!(added["ok"], true);
     assert_same_shape(&added["data"], &add_fixture["response"]);
+    assert_field_names(&added["data"], &add_fixture["response"]);
     assert_eq!(added["data"]["track"]["source_provider"], "ytmusic");
 
     let listed = call_json(streambox_history_list_json, json!({"db_path": db_path}));
     assert_eq!(listed["ok"], true);
     assert_same_shape(&listed["data"], &list_fixture["response"]);
+    assert_field_names(&listed["data"], &list_fixture["response"]);
+}
+
+fn assert_field_names(actual: &Value, expected: &Value) {
+    match (actual, expected) {
+        (Value::Object(actual), Value::Object(expected)) => {
+            let mut actual_keys = actual.keys().map(String::as_str).collect::<Vec<_>>();
+            let mut expected_keys = expected.keys().map(String::as_str).collect::<Vec<_>>();
+            actual_keys.sort_unstable();
+            expected_keys.sort_unstable();
+            assert_eq!(actual_keys, expected_keys);
+            for key in expected.keys() {
+                assert_field_names(&actual[key], &expected[key]);
+            }
+        }
+        (Value::Array(actual), Value::Array(expected)) => {
+            if let (Some(actual), Some(expected)) = (actual.first(), expected.first()) {
+                assert_field_names(actual, expected);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn fixture(relative_path: &str) -> Value {
