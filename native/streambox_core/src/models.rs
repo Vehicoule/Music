@@ -124,6 +124,74 @@ pub struct PlaylistList {
     pub database_path: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SourceIndexEntry {
+    pub source_provider: String,
+    pub source_id: String,
+    pub source_url: String,
+    pub title: String,
+    #[serde(default)]
+    pub artist: String,
+    #[serde(default)]
+    pub album: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_seconds: Option<f64>,
+    #[serde(default)]
+    pub confidence_score: f64,
+    #[serde(default)]
+    pub rank_reason: String,
+    #[serde(default)]
+    pub artwork_url: String,
+    #[serde(default)]
+    pub source_kind: String,
+    #[serde(default)]
+    pub raw_title: String,
+    #[serde(default)]
+    pub canonical_title: String,
+    #[serde(default)]
+    pub canonical_artist: String,
+    #[serde(default)]
+    pub parse_source: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SourceIndexSearchRequest {
+    #[serde(default, alias = "db_path")]
+    pub database_path: Option<String>,
+    pub query: String,
+    #[serde(default)]
+    pub limit: Option<usize>,
+    #[serde(default)]
+    pub scope: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SourceIndexUpsertRequest {
+    #[serde(default, alias = "db_path")]
+    pub database_path: Option<String>,
+    #[serde(default)]
+    pub entries: Vec<SourceIndexEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct SourceIndexClearRequest {
+    #[serde(default, alias = "db_path")]
+    pub database_path: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct SourceIndexRebuildRequest {
+    #[serde(default, alias = "db_path")]
+    pub database_path: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SourceIndexSchemaStatus {
+    pub schema_key: String,
+    pub schema_version: String,
+    pub rebuilt: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct DbHealth {
     pub path: String,

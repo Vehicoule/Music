@@ -505,6 +505,26 @@ class _FavoritesNativeCore implements NativeCore {
     return _unsupported();
   }
 
+  @override
+  Future<Map<String, dynamic>> sourceIndexSearchJson(Map<String, dynamic> input) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> sourceIndexUpsertJson(Map<String, dynamic> input) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> sourceIndexClearJson(Map<String, dynamic> input) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> sourceIndexRebuildJson(Map<String, dynamic> input) async {
+    return _unsupported();
+  }
+
   Map<String, dynamic> _unsupported() {
     return {'ok': false, 'error': {'code': 'unsupported'}};
   }
