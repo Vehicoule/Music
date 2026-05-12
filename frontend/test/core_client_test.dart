@@ -333,6 +333,7 @@ void main() {
     );
 
     final playlists = await rustClient.playlists();
+    expect(playlists.single, isA<Playlist>());
     expect(playlists.single.id, 'playlist-001');
     expect(playlists.single.tracks.single.track.title, 'Fixture Song');
     expect(nativeCore.playlistListInputs.single['database_path'],
@@ -344,6 +345,7 @@ void main() {
           .map((item) => PlaybackItem.fromJson(item as Map<String, dynamic>))
           .toList(),
     );
+    expect(created, isA<Playlist>());
     expect(created.name, 'Road trip');
     expect(created.tracks.single.source?.headers['User-Agent'],
         'StreamboxFixture/1.0');
@@ -388,6 +390,7 @@ void main() {
     );
 
     final favorites = await rustClient.favorites();
+    expect(favorites.single, isA<Favorite>());
     expect(favorites.single.id, 'favorite-001');
     expect(favorites.single.item.track.album?.title, 'Fixture Album');
     expect(nativeCore.favoritesListDatabasePaths.single,
@@ -427,6 +430,7 @@ void main() {
         'ytmusic');
 
     final history = await rustClient.history();
+    expect(history.single, isA<PlaybackItem>());
     expect(history.single.id, 'playback-001');
     expect(history.single.track.canonicalArtist, 'Fixture Artist');
     expect(nativeCore.historyListInputs.single['db_path'],
@@ -470,6 +474,106 @@ void main() {
     expect(apiCalls, 1);
     expect(nativeCore.playlistListInputs.single['database_path'],
         '/tmp/streambox-contract.sqlite3');
+  });
+
+  test('hybrid core client falls back for local methods when Rust returns ok false',
+      () async {
+    final item = _samplePlaybackItem();
+    final okFalse = {
+      'ok': false,
+      'error': {'code': 'database_error', 'message': 'locked'},
+    };
+    final nativeCore = _ContractNativeCore(
+      playlistCreateResponse: okFalse,
+      playlistUpdateResponse: okFalse,
+      playlistDeleteResponse: okFalse,
+      favoritesAddResponse: okFalse,
+      favoritesRemoveResponse: okFalse,
+      historyAddResponse: okFalse,
+      historyListResponse: okFalse,
+    );
+    final apiPaths = <String>[];
+    final apiClient = ApiClient(
+      baseUrl: 'http://127.0.0.1:8000',
+      httpClient: MockClient((request) async {
+        apiPaths.add('${request.method} ${request.url.path}');
+        switch ('${request.method} ${request.url.path}') {
+          case 'POST /api/playlists':
+            expect(jsonDecode(request.body), {
+              'name': 'FastAPI Playlist',
+              'tracks': [item.toJson()],
+            });
+            return http.Response(
+              jsonEncode({
+                'id': 'api-playlist',
+                'name': 'FastAPI Playlist',
+                'description': '',
+                'tracks': [item.toJson()],
+              }),
+              200,
+            );
+          case 'PUT /api/playlists/api-playlist':
+            return http.Response(
+              jsonEncode({
+                'id': 'api-playlist',
+                'name': 'FastAPI Update',
+                'description': '',
+                'tracks': [item.toJson()],
+              }),
+              200,
+            );
+          case 'DELETE /api/playlists/api-playlist':
+          case 'DELETE /api/favorites/favorite-1':
+          case 'POST /api/favorites':
+          case 'POST /api/history':
+            return http.Response('', 204);
+          case 'GET /api/history':
+            return http.Response(jsonEncode([item.toJson()]), 200);
+        }
+        fail('Unexpected FastAPI request: ${request.method} ${request.url}');
+      }),
+    );
+    final coreClient = HybridCoreClient(
+      apiClient: apiClient,
+      nativeCore: nativeCore,
+      rustCoreClient: RustCoreClient(
+        nativeCore: nativeCore,
+        fallbackApiClient: apiClient,
+        databasePath: '/tmp/streambox-contract.sqlite3',
+      ),
+      routingConfig: const CoreClientRoutingConfig(useRustLocalLibrary: true),
+    );
+
+    final created = await coreClient.createPlaylist('FastAPI Playlist', [item]);
+    final updated = await coreClient.updatePlaylist(
+      'api-playlist',
+      name: 'FastAPI Update',
+    );
+    await coreClient.deletePlaylist('api-playlist');
+    await coreClient.favorite(item);
+    await coreClient.unfavorite('favorite-1');
+    await coreClient.addHistory(item);
+    final history = await coreClient.history();
+
+    expect(created.id, 'api-playlist');
+    expect(updated.name, 'FastAPI Update');
+    expect(history.single.id, 'item-1');
+    expect(nativeCore.playlistCreateInputs, hasLength(1));
+    expect(nativeCore.playlistUpdateInputs, hasLength(1));
+    expect(nativeCore.playlistDeleteInputs, hasLength(1));
+    expect(nativeCore.favoritesAddItems, hasLength(1));
+    expect(nativeCore.favoritesRemoveIds.single, 'favorite-1');
+    expect(nativeCore.historyAddInputs, hasLength(1));
+    expect(nativeCore.historyListInputs, hasLength(1));
+    expect(apiPaths, [
+      'POST /api/playlists',
+      'PUT /api/playlists/api-playlist',
+      'DELETE /api/playlists/api-playlist',
+      'POST /api/favorites',
+      'DELETE /api/favorites/favorite-1',
+      'POST /api/history',
+      'GET /api/history',
+    ]);
   });
 
   test('native core ffi reports unavailable when the library cannot be loaded',

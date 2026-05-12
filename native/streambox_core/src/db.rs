@@ -938,7 +938,8 @@ fn migrate_to_v3(transaction: &rusqlite::Transaction<'_>) -> Result<(), CoreErro
             CREATE TABLE IF NOT EXISTS metadata_cache (
                 cache_key TEXT PRIMARY KEY,
                 payload TEXT NOT NULL,
-                created_at INTEGER NOT NULL
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL DEFAULT 0
             );
             "#,
         )
@@ -951,11 +952,26 @@ fn migrate_to_v4(transaction: &rusqlite::Transaction<'_>) -> Result<(), CoreErro
             r#"
             CREATE TABLE IF NOT EXISTS source_index (
                 id TEXT PRIMARY KEY,
+                source_provider TEXT NOT NULL,
+                source_id TEXT NOT NULL,
+                source_url TEXT NOT NULL,
+                source_kind TEXT NOT NULL DEFAULT '',
                 title TEXT NOT NULL DEFAULT '',
                 artist TEXT NOT NULL DEFAULT '',
                 album TEXT NOT NULL DEFAULT '',
+                duration_seconds REAL,
+                confidence_score REAL NOT NULL DEFAULT 0,
+                rank_reason TEXT NOT NULL DEFAULT '',
+                artwork_url TEXT NOT NULL DEFAULT '',
+                raw_title TEXT NOT NULL DEFAULT '',
+                canonical_title TEXT NOT NULL DEFAULT '',
+                canonical_artist TEXT NOT NULL DEFAULT '',
+                parse_source TEXT NOT NULL DEFAULT '',
                 payload TEXT NOT NULL
             );
+
+            CREATE VIRTUAL TABLE IF NOT EXISTS source_index_fts
+            USING fts5(id UNINDEXED, title, artist, album, raw_title, canonical_title, canonical_artist);
 
             CREATE INDEX IF NOT EXISTS idx_history_played_at
             ON history(played_at DESC);
