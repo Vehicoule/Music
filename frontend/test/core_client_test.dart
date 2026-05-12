@@ -102,6 +102,7 @@ void main() {
         fallbackApiClient: apiClient,
         databasePath: '/tmp/streambox-test.sqlite3',
       ),
+      routingConfig: const CoreClientRoutingConfig(useRustLocalLibrary: true),
     );
 
     final favorites = await coreClient.favorites();
@@ -140,6 +141,7 @@ void main() {
         fallbackApiClient: apiClient,
         databasePath: '/tmp/streambox-test.sqlite3',
       ),
+      routingConfig: const CoreClientRoutingConfig(useRustLocalLibrary: true),
     );
 
     final favorites = await coreClient.favorites();
@@ -286,6 +288,9 @@ class _RecordingCoreClient implements CoreClient {
       throw UnimplementedError();
 
   @override
+  Future<void> deletePlaylist(String id) => throw UnimplementedError();
+
+  @override
   Future<DiscoverResponse> discover(String query, {String scope = 'all'}) =>
       throw UnimplementedError();
 
@@ -300,10 +305,22 @@ class _RecordingCoreClient implements CoreClient {
   Future<void> favorite(PlaybackItem item) => throw UnimplementedError();
 
   @override
+  Future<void> unfavorite(String favoriteId) => throw UnimplementedError();
+
+  @override
   Future<void> addHistory(PlaybackItem item) => throw UnimplementedError();
 
   @override
   Future<List<PlaybackItem>> history() => throw UnimplementedError();
+
+  @override
+  Future<Playlist> updatePlaylist(
+    String id, {
+    String? name,
+    String? description,
+    List<PlaybackItem>? tracks,
+  }) =>
+      throw UnimplementedError();
 
   @override
   Future<NativeCoreHealth> nativeHealth() => throw UnimplementedError();
@@ -350,7 +367,7 @@ class _FavoritesNativeCore implements NativeCore {
 
   @override
   Future<Map<String, dynamic>> favoritesAddJson(
-    String databasePath,
+    String? databasePath,
     Map<String, dynamic> item,
   ) async {
     return {
@@ -360,14 +377,14 @@ class _FavoritesNativeCore implements NativeCore {
   }
 
   @override
-  Future<Map<String, dynamic>> favoritesListJson(String databasePath) async {
+  Future<Map<String, dynamic>> favoritesListJson(String? databasePath) async {
     listCalls += 1;
     return listResponse;
   }
 
   @override
   Future<Map<String, dynamic>> favoritesRemoveJson(
-    String databasePath,
+    String? databasePath,
     String favoriteId,
   ) async {
     return {'ok': true, 'data': null};
@@ -380,5 +397,50 @@ class _FavoritesNativeCore implements NativeCore {
       version: 'streambox-core 0.1.0',
       platform: 'test-platform',
     );
+  }
+
+  @override
+  Future<Map<String, dynamic>> historyAddJson(Map<String, dynamic> input) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> historyClearJson(Map<String, dynamic> input) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> historyListJson(Map<String, dynamic> input) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> playlistsCreateJson(
+    Map<String, dynamic> input,
+  ) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> playlistsDeleteJson(
+    Map<String, dynamic> input,
+  ) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> playlistsListJson(Map<String, dynamic> input) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> playlistsUpdateJson(
+    Map<String, dynamic> input,
+  ) async {
+    return _unsupported();
+  }
+
+  Map<String, dynamic> _unsupported() {
+    return {'ok': false, 'error': {'code': 'unsupported'}};
   }
 }

@@ -7,8 +7,9 @@ class RustCoreClient implements CoreClient {
   const RustCoreClient({
     required this.nativeCore,
     required this.fallbackApiClient,
-    this.dbPath,
-  });
+    String? dbPath,
+    String? databasePath,
+  }) : dbPath = dbPath ?? databasePath;
 
   final NativeCore nativeCore;
   final ApiClient fallbackApiClient;
@@ -60,7 +61,7 @@ class RustCoreClient implements CoreClient {
   @override
   Future<List<Playlist>> playlists() async {
     final response = await nativeCore.playlistsListJson({});
-    final payload = _requireNativeData(response);
+    final payload = _unwrapJsonProtocol(response);
     return (payload as List<dynamic>)
         .map((item) => Playlist.fromJson(item as Map<String, dynamic>))
         .toList();
@@ -73,7 +74,7 @@ class RustCoreClient implements CoreClient {
       'tracks': tracks.map((item) => item.toJson()).toList(),
     });
     return Playlist.fromJson(
-      _requireNativeData(response) as Map<String, dynamic>,
+      _unwrapJsonProtocol(response) as Map<String, dynamic>,
     );
   }
 
@@ -92,19 +93,19 @@ class RustCoreClient implements CoreClient {
         'tracks': tracks.map((item) => item.toJson()).toList(),
     });
     return Playlist.fromJson(
-      _requireNativeData(response) as Map<String, dynamic>,
+      _unwrapJsonProtocol(response) as Map<String, dynamic>,
     );
   }
 
   @override
   Future<void> deletePlaylist(String id) async {
     final response = await nativeCore.playlistsDeleteJson({'id': id});
-    _requireNativeData(response);
+    _unwrapJsonProtocol(response);
   }
 
   @override
   Future<List<Favorite>> favorites() async {
-    final response = await nativeCore.favoritesListJson(databasePath);
+    final response = await nativeCore.favoritesListJson(dbPath);
     final data = _unwrapJsonProtocol(response) as List<dynamic>;
     return data
         .map((item) => Favorite.fromJson(item as Map<String, dynamic>))
@@ -114,7 +115,7 @@ class RustCoreClient implements CoreClient {
   @override
   Future<void> favorite(PlaybackItem item) async {
     final response = await nativeCore.favoritesAddJson(
-      databasePath,
+      dbPath,
       item.toJson(),
     );
     _unwrapJsonProtocol(response);
@@ -123,7 +124,7 @@ class RustCoreClient implements CoreClient {
   @override
   Future<void> unfavorite(String favoriteId) async {
     final response = await nativeCore.favoritesRemoveJson(
-      databasePath,
+      dbPath,
       favoriteId,
     );
     _unwrapJsonProtocol(response);
@@ -131,7 +132,7 @@ class RustCoreClient implements CoreClient {
 
   @override
   Future<void> addHistory(PlaybackItem item) async {
-    await _requireOk(await nativeCore.historyAddJson({
+    _requireOk(await nativeCore.historyAddJson({
       'db_path': dbPath,
       'item': item.toJson(),
     }));
@@ -139,7 +140,7 @@ class RustCoreClient implements CoreClient {
 
   @override
   Future<List<PlaybackItem>> history() async {
-    final response = await _requireOk(await nativeCore.historyListJson({
+    final response = _requireOk(await nativeCore.historyListJson({
       'db_path': dbPath,
     }));
     return (response['data'] as List<dynamic>? ?? [])
@@ -148,7 +149,7 @@ class RustCoreClient implements CoreClient {
   }
 
   Future<void> clearHistory() async {
-    await _requireOk(await nativeCore.historyClearJson({
+    _requireOk(await nativeCore.historyClearJson({
       'db_path': dbPath,
     }));
   }
