@@ -469,11 +469,13 @@ fn migrate_to_v3(transaction: &rusqlite::Transaction<'_>) -> Result<(), CoreErro
             CREATE TABLE IF NOT EXISTS metadata_cache (
                 cache_key TEXT PRIMARY KEY,
                 payload TEXT NOT NULL,
-                updated_at INTEGER NOT NULL
+                created_at INTEGER NOT NULL DEFAULT 0,
+                updated_at INTEGER NOT NULL DEFAULT 0
             );
             "#,
         )
-        .map_err(sql_error)
+        .map_err(sql_error)?;
+    ensure_metadata_cache_timestamps(transaction)
 }
 
 fn migrate_to_v4(transaction: &rusqlite::Transaction<'_>) -> Result<(), CoreError> {
@@ -491,6 +493,34 @@ fn migrate_to_v5(transaction: &rusqlite::Transaction<'_>) -> Result<(), CoreErro
     ensure_source_index_schema(transaction).map(|_| ())
 }
 
+fn ensure_metadata_cache_timestamps(connection: &Connection) -> Result<(), CoreError> {
+    let columns = connection
+        .prepare("PRAGMA table_info(metadata_cache)")
+        .map_err(sql_error)?
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(sql_error)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(sql_error)?;
+
+    if !columns.iter().any(|column| column == "created_at") {
+        connection
+            .execute(
+                "ALTER TABLE metadata_cache ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0",
+                [],
+            )
+            .map_err(sql_error)?;
+    }
+    if !columns.iter().any(|column| column == "updated_at") {
+        connection
+            .execute(
+                "ALTER TABLE metadata_cache ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0",
+                [],
+            )
+            .map_err(sql_error)?;
+    }
+    Ok(())
+}
+
 fn ensure_source_index_schema(
     connection: &Connection,
 ) -> Result<SourceIndexSchemaStatus, CoreError> {
@@ -500,11 +530,13 @@ fn ensure_source_index_schema(
             CREATE TABLE IF NOT EXISTS metadata_cache (
                 cache_key TEXT PRIMARY KEY,
                 payload TEXT NOT NULL,
-                updated_at INTEGER NOT NULL
+                created_at INTEGER NOT NULL DEFAULT 0,
+                updated_at INTEGER NOT NULL DEFAULT 0
             );
             "#,
         )
         .map_err(sql_error)?;
+    ensure_metadata_cache_timestamps(connection)?;
 
     let rebuilt = source_index_needs_rebuild(connection)?;
     if rebuilt {
@@ -559,8 +591,12 @@ fn ensure_source_index_schema(
 
     connection
         .execute(
-            "INSERT OR REPLACE INTO metadata_cache(cache_key, payload, updated_at)
-             VALUES (?, ?, strftime('%s', 'now'))",
+            "INSERT INTO metadata_cache(cache_key, payload, created_at, updated_at)
+             VALUES (?, ?, strftime('%s', 'now'), strftime('%s', 'now'))
+             ON CONFLICT(cache_key) DO UPDATE SET
+                payload = excluded.payload,
+                created_at = excluded.created_at,
+                updated_at = excluded.updated_at",
             params![
                 SOURCE_INDEX_SCHEMA_KEY,
                 format!("\"{SOURCE_INDEX_SCHEMA_VERSION}\"")

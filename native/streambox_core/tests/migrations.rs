@@ -57,6 +57,38 @@ fn older_user_version_upgrades_incrementally_to_current_schema() {
 }
 
 #[test]
+fn fastapi_initialized_metadata_cache_upgrades_for_rust_source_index() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let database_path = temp_dir.path().join("fastapi.sqlite3");
+    let connection = Connection::open(&database_path).unwrap();
+    create_fastapi_schema(&connection);
+    drop(connection);
+
+    db::init_database(&database_path).unwrap();
+
+    let connection = Connection::open(&database_path).unwrap();
+    assert_eq!(user_version(&connection), SCHEMA_VERSION);
+    assert_tables_exist(
+        &connection,
+        &["metadata_cache", "source_index", "source_index_fts"],
+    );
+    assert_table_columns(
+        &connection,
+        "metadata_cache",
+        &["cache_key", "payload", "created_at", "updated_at"],
+    );
+
+    let source_index_version: String = connection
+        .query_row(
+            "SELECT payload FROM metadata_cache WHERE cache_key = 'source-index:schema-version:v4'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(source_index_version, "\"4\"");
+}
+
+#[test]
 fn migration_preserves_existing_playlist_favorite_and_history_data() {
     let temp_dir = tempfile::tempdir().unwrap();
     let database_path = temp_dir.path().join("legacy.sqlite3");
@@ -162,6 +194,68 @@ fn create_v1_v2_schema(connection: &Connection) {
         .unwrap();
 }
 
+fn create_fastapi_schema(connection: &Connection) {
+    connection
+        .execute_batch(
+            r#"
+            CREATE TABLE metadata_cache (
+                cache_key TEXT PRIMARY KEY,
+                payload TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE playlists (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE playlist_tracks (
+                playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+                position INTEGER NOT NULL,
+                item_json TEXT NOT NULL,
+                PRIMARY KEY (playlist_id, position)
+            );
+
+            CREATE TABLE favorites (
+                id TEXT PRIMARY KEY,
+                item_json TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE history (
+                id TEXT PRIMARY KEY,
+                item_json TEXT NOT NULL,
+                played_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE source_index (
+                source_provider TEXT NOT NULL,
+                source_id TEXT NOT NULL,
+                source_url TEXT NOT NULL,
+                title TEXT NOT NULL,
+                artist TEXT NOT NULL DEFAULT '',
+                album TEXT NOT NULL DEFAULT '',
+                duration_seconds REAL,
+                normalized_text TEXT NOT NULL,
+                confidence_score REAL NOT NULL DEFAULT 0,
+                rank_reason TEXT NOT NULL DEFAULT '',
+                artwork_url TEXT NOT NULL DEFAULT '',
+                source_kind TEXT NOT NULL DEFAULT '',
+                raw_title TEXT NOT NULL DEFAULT '',
+                canonical_title TEXT NOT NULL DEFAULT '',
+                canonical_artist TEXT NOT NULL DEFAULT '',
+                parse_source TEXT NOT NULL DEFAULT '',
+                last_matched_at INTEGER NOT NULL,
+                PRIMARY KEY (source_provider, source_id)
+            );
+            "#,
+        )
+        .unwrap();
+}
+
 fn assert_tables_exist(connection: &Connection, expected_tables: &[&str]) {
     for table in expected_tables {
         let exists: bool = connection
@@ -172,6 +266,23 @@ fn assert_tables_exist(connection: &Connection, expected_tables: &[&str]) {
             )
             .unwrap();
         assert!(exists, "missing table {table}");
+    }
+}
+
+fn assert_table_columns(connection: &Connection, table_name: &str, expected_columns: &[&str]) {
+    let columns = connection
+        .prepare(&format!("PRAGMA table_info({table_name})"))
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(1))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+
+    for column in expected_columns {
+        assert!(
+            columns.iter().any(|existing| existing == column),
+            "missing column {column}; found {columns:?}"
+        );
     }
 }
 
