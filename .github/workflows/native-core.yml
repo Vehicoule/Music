@@ -11,6 +11,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/streambox_core
       - name: Check Rust core formatting
         run: cargo fmt --manifest-path native/streambox_core/Cargo.toml -- --check
       - name: Test Rust core
@@ -21,9 +24,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/streambox_core
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          cache: true
       - name: Install Flutter dependencies
         working-directory: frontend
         run: flutter pub get
@@ -47,13 +54,34 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+          cache: gradle
+          cache-dependency-path: |
+            frontend/android/**/*.gradle*
+            frontend/android/gradle/wrapper/gradle-wrapper.properties
       - uses: android-actions/setup-android@v3
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/streambox_core
+          shared-key: android-core
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          cache: true
+      - name: Cache Android NDK
+        id: android-ndk-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_HOME }}\ndk\28.2.13676358
+          key: android-ndk-28.2.13676358-${{ runner.os }}
       - name: Install Android NDK
-        run: sdkmanager "ndk;28.2.13676358"
+        run: |
+          $ndkPath = Join-Path $env:ANDROID_HOME 'ndk/28.2.13676358'
+          if (-not (Test-Path -LiteralPath $ndkPath)) {
+            sdkmanager "ndk;28.2.13676358"
+          } else {
+            Write-Host "Android NDK already restored at $ndkPath"
+          }
       - name: Install Flutter dependencies
         working-directory: frontend
         run: flutter pub get
