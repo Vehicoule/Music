@@ -277,24 +277,9 @@ Map<String, dynamic> _sourceIndexDiscoverItemJson(Map<String, dynamic> entry) {
       'parse_source': entry['parse_source'],
       'source': sourceProvider,
     },
-    'source': {
-      'adapter': sourceProvider == 'youtube' ? 'ytdlp' : sourceProvider,
-      'url': sourceUrl,
-      'title': entry['raw_title'] ?? entry['title'],
-      'duration_seconds': durationSeconds,
-      'source_provider': sourceProvider,
-      'source_id': sourceId,
-      'source_url': sourceUrl,
-      'source_kind': sourceKind,
-      'raw_title': entry['raw_title'],
-      'canonical_title': entry['canonical_title'],
-      'canonical_artist': entry['canonical_artist'],
-      'album_title': entry['album'],
-      'artwork_url': entry['artwork_url'],
-      'parse_source': entry['parse_source'],
-      'confidence_score': entry['confidence_score'],
-      'rank_reason': entry['rank_reason'],
-    },
+    // Cached source-index hits contain discovery metadata only. Do not attach
+    // a SourceCandidate here: source_url is the provider page that must still
+    // be resolved by the backend before playback.
   };
 }
 
