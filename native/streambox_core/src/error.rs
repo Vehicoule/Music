@@ -1,25 +1,16 @@
 use serde::Serialize;
 
-#[derive(Debug, Clone, Serialize)]
-pub struct ErrorBody {
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CoreError {
     pub code: &'static str,
     pub message: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct ErrorResponse {
-    pub ok: bool,
-    pub error: ErrorBody,
-}
-
-impl ErrorResponse {
+impl CoreError {
     pub fn new(code: &'static str, message: impl Into<String>) -> Self {
         Self {
-            ok: false,
-            error: ErrorBody {
-                code,
-                message: message.into(),
-            },
+            code,
+            message: message.into(),
         }
     }
 }

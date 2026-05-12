@@ -2,10 +2,11 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
 use serde::Serialize;
+use serde_json::{json, Value};
 
-use crate::error::ErrorResponse;
-use crate::models::{EchoRequest, EchoResponse, HealthJson, PlatformInfoJson};
-use crate::{echo, platform_info, version};
+use crate::error::CoreError;
+use crate::models::EchoPayload;
+use crate::{health_json, platform_info, version};
 
 #[no_mangle]
 pub extern "C" fn streambox_version() -> *mut c_char {
@@ -14,40 +15,19 @@ pub extern "C" fn streambox_version() -> *mut c_char {
 
 #[no_mangle]
 pub extern "C" fn streambox_health_json() -> *mut c_char {
-    json_response(&HealthJson::default())
+    to_owned_json_string(&health_json())
 }
 
 #[no_mangle]
 pub extern "C" fn streambox_platform_info_json() -> *mut c_char {
-    let info = platform_info();
-    json_response(&PlatformInfoJson::from(&info))
+    to_owned_json_string(&platform_info())
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn streambox_echo_json(input_json: *const c_char) -> *mut c_char {
-    if input_json.is_null() {
-        return json_response(&ErrorResponse::new(
-            "null_input",
-            "input_json pointer was null",
-        ));
-    }
-
-    let input = match CStr::from_ptr(input_json).to_str() {
-        Ok(value) => value,
-        Err(error) => {
-            return json_response(&ErrorResponse::new(
-                "invalid_utf8",
-                format!("input_json was not valid UTF-8: {error}"),
-            ));
-        }
-    };
-
-    match serde_json::from_str::<EchoRequest>(input) {
-        Ok(request) => json_response(&EchoResponse::new(echo(request.payload))),
-        Err(error) => json_response(&ErrorResponse::new(
-            "invalid_json",
-            format!("input_json was not valid JSON: {error}"),
-        )),
+    match read_json_value(input_json) {
+        Ok(value) => ok_json(EchoPayload { echo: value }),
+        Err(error) => error_json(error),
     }
 }
 
@@ -58,12 +38,37 @@ pub unsafe extern "C" fn streambox_string_free(value: *mut c_char) {
     }
 }
 
-fn json_response(value: &impl Serialize) -> *mut c_char {
-    match serde_json::to_vec(value) {
+fn read_json_value(input_json: *const c_char) -> Result<Value, CoreError> {
+    if input_json.is_null() {
+        return Err(CoreError::new(
+            "null_input",
+            "expected a non-null JSON string pointer",
+        ));
+    }
+    let input = unsafe { CStr::from_ptr(input_json) }
+        .to_str()
+        .map_err(|error| CoreError::new("invalid_utf8", error.to_string()))?;
+    serde_json::from_str(input).map_err(|error| CoreError::new("invalid_json", error.to_string()))
+}
+
+fn ok_json<T: Serialize>(data: T) -> *mut c_char {
+    to_owned_json_string(&json!({
+        "ok": true,
+        "data": data,
+    }))
+}
+
+fn error_json(error: CoreError) -> *mut c_char {
+    to_owned_json_string(&json!({
+        "ok": false,
+        "error": error,
+    }))
+}
+
+fn to_owned_json_string<T: Serialize>(value: &T) -> *mut c_char {
+    match serde_json::to_string(value) {
         Ok(value) => owned_c_string(value),
-        Err(_) => owned_c_string(
-            r#"{"ok":false,"error":{"code":"serialization_error","message":"failed to serialize JSON response"}}"#,
-        ),
+        Err(error) => error_json(CoreError::new("serialization_failed", error.to_string())),
     }
 }
 

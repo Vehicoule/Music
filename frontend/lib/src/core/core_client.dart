@@ -24,39 +24,70 @@ abstract class CoreClient {
   Future<NativeCoreHealth> nativeHealth();
 }
 
+class CoreClientRoutingConfig {
+  const CoreClientRoutingConfig({
+    this.useRustLocalLibrary = false,
+  });
+
+  final bool useRustLocalLibrary;
+}
+
 class HybridCoreClient implements CoreClient {
   HybridCoreClient({
     required this.apiClient,
     required this.nativeCore,
-    RustCoreClient? rustCoreClient,
-  }) : rustCoreClient =
-            rustCoreClient ?? RustCoreClient(nativeCore: nativeCore);
+    this.rustCoreClient,
+    this.routingConfig = const CoreClientRoutingConfig(),
+  });
 
   final ApiClient apiClient;
   final NativeCore nativeCore;
-  final RustCoreClient rustCoreClient;
+  final CoreClient? rustCoreClient;
+  final CoreClientRoutingConfig routingConfig;
+
+  Future<T> _rustLocalOrApi<T>(
+    Future<T> Function(CoreClient client) rustRequest,
+    Future<T> Function(ApiClient client) apiRequest,
+  ) async {
+    final rustClient = rustCoreClient;
+    if (!routingConfig.useRustLocalLibrary || rustClient == null) {
+      return apiRequest(apiClient);
+    }
+
+    try {
+      return await rustRequest(rustClient);
+    } catch (_) {
+      return apiRequest(apiClient);
+    }
+  }
 
   @override
   Future<DiscoverResponse> discover(String query, {String scope = 'all'}) {
-    return apiClient.discover(query, scope: scope);
+    return rustCoreClient?.discover(query, scope: scope) ??
+        apiClient.discover(query, scope: scope);
   }
 
   @override
   Future<DiscoverResponse> discoverPlayable(String query) {
-    return apiClient.discoverPlayable(query);
+    return rustCoreClient?.discoverPlayable(query) ??
+        apiClient.discoverPlayable(query);
   }
 
   @override
-  Future<RuntimeDebug> runtimeDebug() => apiClient.runtimeDebug();
+  Future<RuntimeDebug> runtimeDebug() {
+    return rustCoreClient?.runtimeDebug() ?? apiClient.runtimeDebug();
+  }
 
   @override
   Future<AlbumDetail> albumDetail(String browseId) {
-    return apiClient.albumDetail(browseId);
+    return rustCoreClient?.albumDetail(browseId) ??
+        apiClient.albumDetail(browseId);
   }
 
   @override
   Future<ArtistDetail> artistDetail(String browseId) {
-    return apiClient.artistDetail(browseId);
+    return rustCoreClient?.artistDetail(browseId) ??
+        apiClient.artistDetail(browseId);
   }
 
   @override
@@ -65,32 +96,69 @@ class HybridCoreClient implements CoreClient {
     List<String> adapters = const [],
     String? sourceUrl,
   }) {
-    return apiClient.resolve(track, adapters: adapters, sourceUrl: sourceUrl);
+    return rustCoreClient?.resolve(
+          track,
+          adapters: adapters,
+          sourceUrl: sourceUrl,
+        ) ??
+        apiClient.resolve(track, adapters: adapters, sourceUrl: sourceUrl);
   }
 
   @override
-  Future<List<AdapterCapability>> sources() => apiClient.sources();
+  Future<List<AdapterCapability>> sources() {
+    return rustCoreClient?.sources() ?? apiClient.sources();
+  }
 
   @override
-  Future<List<Playlist>> playlists() => apiClient.playlists();
+  Future<List<Playlist>> playlists() {
+    return _rustLocalOrApi(
+      (client) => client.playlists(),
+      (client) => client.playlists(),
+    );
+  }
 
   @override
   Future<Playlist> createPlaylist(String name, List<PlaybackItem> tracks) {
-    return apiClient.createPlaylist(name, tracks);
+    return _rustLocalOrApi(
+      (client) => client.createPlaylist(name, tracks),
+      (client) => client.createPlaylist(name, tracks),
+    );
   }
 
   @override
-  Future<List<Favorite>> favorites() => apiClient.favorites();
+  Future<List<Favorite>> favorites() {
+    return _rustLocalOrApi(
+      (client) => client.favorites(),
+      (client) => client.favorites(),
+    );
+  }
 
   @override
-  Future<void> favorite(PlaybackItem item) => apiClient.favorite(item);
+  Future<void> favorite(PlaybackItem item) {
+    return _rustLocalOrApi(
+      (client) => client.favorite(item),
+      (client) => client.favorite(item),
+    );
+  }
 
   @override
-  Future<void> addHistory(PlaybackItem item) => apiClient.addHistory(item);
+  Future<void> addHistory(PlaybackItem item) {
+    return _rustLocalOrApi(
+      (client) => client.addHistory(item),
+      (client) => client.addHistory(item),
+    );
+  }
 
   @override
-  Future<List<PlaybackItem>> history() => apiClient.history();
+  Future<List<PlaybackItem>> history() {
+    return _rustLocalOrApi(
+      (client) => client.history(),
+      (client) => client.history(),
+    );
+  }
 
   @override
-  Future<NativeCoreHealth> nativeHealth() => rustCoreClient.nativeHealth();
+  Future<NativeCoreHealth> nativeHealth() {
+    return rustCoreClient?.nativeHealth() ?? nativeCore.health();
+  }
 }
