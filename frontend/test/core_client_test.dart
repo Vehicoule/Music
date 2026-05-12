@@ -1,9 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:streambox/src/api_client.dart';
 import 'package:streambox/src/core/core_client.dart';
 import 'package:streambox/src/core/rust_core_client.dart';
+import 'package:streambox/src/models.dart';
 import 'package:streambox/src/native/native_core.dart';
 
 void main() {
@@ -83,136 +86,165 @@ void main() {
     expect(health.version, isNull);
     expect(health.error, contains('missing_streambox_core'));
   });
-test('hybrid playlist list falls back when the Rust library is unavailable', () async {
-  final apiClient = ApiClient(
-    baseUrl: 'http://127.0.0.1:8000',
-    httpClient: MockClient((request) async {
-      expect(request.method, 'GET');
-      expect(request.url.path, '/api/playlists');
-      return http.Response(
-        '[{"id":"playlist-missing-rust","name":"FastAPI","description":"","tracks":[]}]',
-        200,
-      );
-    }),
-  );
-  final nativeCore = FfiNativeCore(libraryName: 'missing_streambox_core');
-  final coreClient = HybridCoreClient(
-    apiClient: apiClient,
-    nativeCore: nativeCore,
-    rustCoreClient: RustCoreClient(
-      nativeCore: nativeCore,
-      fallbackApiClient: apiClient,
-    ),
-  );
 
-  final playlists = await coreClient.playlists();
-
-  expect(playlists.single.id, 'playlist-missing-rust');
-  expect(playlists.single.name, 'FastAPI');
-});
-
-test('hybrid playlist list falls back to FastAPI when Rust is unsupported', () async {
-  final apiClient = ApiClient(
-    baseUrl: 'http://127.0.0.1:8000',
-    httpClient: MockClient((request) async {
-      expect(request.method, 'GET');
-      expect(request.url.path, '/api/playlists');
-      return http.Response(
-        '[{"id":"playlist-1","name":"Fallback","description":"","tracks":[]}]',
-        200,
-      );
-    }),
-  );
-  final coreClient = HybridCoreClient(
-    apiClient: apiClient,
-    nativeCore: const StaticNativeCore(
-      NativeCoreHealth(available: false, error: 'missing native library'),
-    ),
-    rustCoreClient: RustCoreClient(
+  test('hybrid core client routes local playlists to Rust when enabled',
+      () async {
+    final rustClient = _RecordingCoreClient(
+      playlistsResult: const [
+        Playlist(id: 'rust-playlist', name: 'Rust', description: '', tracks: []),
+      ],
+    );
+    final apiClient = ApiClient(
+      baseUrl: 'http://127.0.0.1:8000',
+      httpClient: MockClient((request) async {
+        fail('FastAPI should not be called when Rust local library succeeds');
+      }),
+    );
+    final coreClient = HybridCoreClient(
+      apiClient: apiClient,
       nativeCore: const StaticNativeCore(
-        NativeCoreHealth(available: false, error: 'missing native library'),
+        NativeCoreHealth(available: true, platform: 'test'),
       ),
-      fallbackApiClient: apiClient,
-    ),
-  );
+      rustCoreClient: rustClient,
+      routingConfig: const CoreClientRoutingConfig(useRustLocalLibrary: true),
+    );
 
-  final playlists = await coreClient.playlists();
+    final playlists = await coreClient.playlists();
 
-  expect(playlists.single.id, 'playlist-1');
-  expect(playlists.single.name, 'Fallback');
-});
+    expect(playlists.single.id, 'rust-playlist');
+    expect(rustClient.playlistsCalls, 1);
+  });
 
-test('hybrid playlist create falls back after controlled Rust failure', () async {
-  final apiClient = ApiClient(
-    baseUrl: 'http://127.0.0.1:8000',
-    httpClient: MockClient((request) async {
-      expect(request.method, 'POST');
-      expect(request.url.path, '/api/playlists');
-      return http.Response(
-        '{"id":"playlist-2","name":"Fallback Create","description":"","tracks":[]}',
-        201,
-      );
-    }),
-  );
-  final coreClient = HybridCoreClient(
-    apiClient: apiClient,
-    nativeCore: const StaticNativeCore(NativeCoreHealth(available: true)),
-    rustCoreClient: RustCoreClient(
-      nativeCore: const _FailingPlaylistNativeCore(),
-      fallbackApiClient: apiClient,
-    ),
-  );
+  test('hybrid core client falls back to FastAPI when Rust local playlists fail',
+      () async {
+    final rustClient = _RecordingCoreClient(throwOnPlaylists: true);
+    var apiCalls = 0;
+    final apiClient = ApiClient(
+      baseUrl: 'http://127.0.0.1:8000',
+      httpClient: MockClient((request) async {
+        apiCalls += 1;
+        expect(request.url.path, '/api/playlists');
+        return http.Response(
+          '[{"id":"api-playlist","name":"FastAPI","description":"","tracks":[]}]',
+          200,
+        );
+      }),
+    );
+    final coreClient = HybridCoreClient(
+      apiClient: apiClient,
+      nativeCore: const StaticNativeCore(
+        NativeCoreHealth(available: true, platform: 'test'),
+      ),
+      rustCoreClient: rustClient,
+      routingConfig: const CoreClientRoutingConfig(useRustLocalLibrary: true),
+    );
 
-  final playlist = await coreClient.createPlaylist('Fallback Create', const []);
+    final playlists = await coreClient.playlists();
 
-  expect(playlist.id, 'playlist-2');
-  expect(playlist.name, 'Fallback Create');
-});
+    expect(playlists.single.id, 'api-playlist');
+    expect(rustClient.playlistsCalls, 1);
+    expect(apiCalls, 1);
+  });
 
+  test('hybrid core client uses FastAPI directly when Rust local library disabled',
+      () async {
+    final rustClient = _RecordingCoreClient(
+      playlistsResult: const [
+        Playlist(id: 'rust-playlist', name: 'Rust', description: '', tracks: []),
+      ],
+    );
+    var apiCalls = 0;
+    final apiClient = ApiClient(
+      baseUrl: 'http://127.0.0.1:8000',
+      httpClient: MockClient((request) async {
+        apiCalls += 1;
+        expect(request.url.path, '/api/playlists');
+        return http.Response(
+          '[{"id":"api-playlist","name":"FastAPI","description":"","tracks":[]}]',
+          200,
+        );
+      }),
+    );
+    final coreClient = HybridCoreClient(
+      apiClient: apiClient,
+      nativeCore: const StaticNativeCore(
+        NativeCoreHealth(available: true, platform: 'test'),
+      ),
+      rustCoreClient: rustClient,
+    );
+
+    final playlists = await coreClient.playlists();
+
+    expect(playlists.single.id, 'api-playlist');
+    expect(rustClient.playlistsCalls, 0);
+    expect(apiCalls, 1);
+  });
 }
 
-class _FailingPlaylistNativeCore implements NativeCore {
-  const _FailingPlaylistNativeCore();
+class _RecordingCoreClient implements CoreClient {
+  _RecordingCoreClient({
+    this.playlistsResult = const [],
+    this.throwOnPlaylists = false,
+  });
+
+  final List<Playlist> playlistsResult;
+  final bool throwOnPlaylists;
+  int playlistsCalls = 0;
 
   @override
-  Future<NativeCoreHealth> health() async =>
-      const NativeCoreHealth(available: true);
+  Future<List<Playlist>> playlists() async {
+    playlistsCalls += 1;
+    if (throwOnPlaylists) {
+      throw StateError('Rust local playlists failed');
+    }
+    return playlistsResult;
+  }
 
   @override
-  Future<Map<String, dynamic>> echoJson(Map<String, dynamic> input) async => {
-        'ok': true,
-        'data': {'echo': input},
-      };
+  Future<AlbumDetail> albumDetail(String browseId) => throw UnimplementedError();
 
   @override
-  Future<Map<String, dynamic>> playlistsListJson(
-    Map<String, dynamic> input,
-  ) async =>
-      _error();
+  Future<ArtistDetail> artistDetail(String browseId) =>
+      throw UnimplementedError();
 
   @override
-  Future<Map<String, dynamic>> playlistsCreateJson(
-    Map<String, dynamic> input,
-  ) async =>
-      _error();
+  Future<Playlist> createPlaylist(String name, List<PlaybackItem> tracks) =>
+      throw UnimplementedError();
 
   @override
-  Future<Map<String, dynamic>> playlistsDeleteJson(
-    Map<String, dynamic> input,
-  ) async =>
-      _error();
+  Future<DiscoverResponse> discover(String query, {String scope = 'all'}) =>
+      throw UnimplementedError();
 
   @override
-  Future<Map<String, dynamic>> playlistsUpdateJson(
-    Map<String, dynamic> input,
-  ) async =>
-      _error();
+  Future<DiscoverResponse> discoverPlayable(String query) =>
+      throw UnimplementedError();
 
-  Map<String, dynamic> _error() => {
-        'ok': false,
-        'error': {
-          'code': 'database_error',
-          'message': 'test controlled failure',
-        },
-      };
+  @override
+  Future<List<Favorite>> favorites() => throw UnimplementedError();
+
+  @override
+  Future<void> favorite(PlaybackItem item) => throw UnimplementedError();
+
+  @override
+  Future<void> addHistory(PlaybackItem item) => throw UnimplementedError();
+
+  @override
+  Future<List<PlaybackItem>> history() => throw UnimplementedError();
+
+  @override
+  Future<NativeCoreHealth> nativeHealth() => throw UnimplementedError();
+
+  @override
+  Future<ResolveResult> resolve(
+    TrackMetadata track, {
+    List<String> adapters = const [],
+    String? sourceUrl,
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<RuntimeDebug> runtimeDebug() => throw UnimplementedError();
+
+  @override
+  Future<List<AdapterCapability>> sources() => throw UnimplementedError();
 }

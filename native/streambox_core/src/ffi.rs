@@ -1,12 +1,19 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use crate::db::db_health;
 use crate::error::CoreError;
-use crate::models::EchoPayload;
-use crate::{health_json, platform_info, playlists, version};
+use crate::history;
+use crate::models::{EchoPayload, HistoryAddRequest, HistoryClearRequest, HistoryListRequest};
+use crate::{health_json, platform_info, version};
+
+#[derive(Debug, Deserialize)]
+struct DbHealthRequest {
+    path: String,
+}
 
 #[no_mangle]
 pub extern "C" fn streambox_version() -> *mut c_char {
@@ -32,10 +39,13 @@ pub unsafe extern "C" fn streambox_echo_json(input_json: *const c_char) -> *mut 
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn streambox_playlists_list_json(input_json: *const c_char) -> *mut c_char {
-    match read_json(input_json) {
-        Ok(payload) => match playlists::list(payload) {
-            Ok(playlists) => ok_json(playlists),
+pub unsafe extern "C" fn streambox_history_list_json(input_json: *const c_char) -> *mut c_char {
+    match read_json_value(input_json).and_then(|value| {
+        serde_json::from_value::<HistoryListRequest>(value)
+            .map_err(|error| CoreError::new("invalid_history_request", error.to_string()))
+    }) {
+        Ok(request) => match history::list_history(request.db_path.as_deref(), request.limit) {
+            Ok(items) => ok_json(items),
             Err(error) => error_json(error),
         },
         Err(error) => error_json(error),
@@ -43,10 +53,13 @@ pub unsafe extern "C" fn streambox_playlists_list_json(input_json: *const c_char
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn streambox_playlists_create_json(input_json: *const c_char) -> *mut c_char {
-    match read_json(input_json) {
-        Ok(payload) => match playlists::create(payload) {
-            Ok(playlist) => ok_json(playlist),
+pub unsafe extern "C" fn streambox_history_add_json(input_json: *const c_char) -> *mut c_char {
+    match read_json_value(input_json).and_then(|value| {
+        serde_json::from_value::<HistoryAddRequest>(value)
+            .map_err(|error| CoreError::new("invalid_history_request", error.to_string()))
+    }) {
+        Ok(request) => match history::add_history(request.db_path.as_deref(), request.item) {
+            Ok(item) => ok_json(item),
             Err(error) => error_json(error),
         },
         Err(error) => error_json(error),
@@ -54,21 +67,13 @@ pub unsafe extern "C" fn streambox_playlists_create_json(input_json: *const c_ch
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn streambox_playlists_delete_json(input_json: *const c_char) -> *mut c_char {
-    match read_json(input_json) {
-        Ok(payload) => match playlists::delete(payload) {
+pub unsafe extern "C" fn streambox_history_clear_json(input_json: *const c_char) -> *mut c_char {
+    match read_json_value(input_json).and_then(|value| {
+        serde_json::from_value::<HistoryClearRequest>(value)
+            .map_err(|error| CoreError::new("invalid_history_request", error.to_string()))
+    }) {
+        Ok(request) => match history::clear_history(request.db_path.as_deref()) {
             Ok(()) => ok_json(json!({})),
-            Err(error) => error_json(error),
-        },
-        Err(error) => error_json(error),
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn streambox_playlists_update_json(input_json: *const c_char) -> *mut c_char {
-    match read_json(input_json) {
-        Ok(payload) => match playlists::update(payload) {
-            Ok(playlist) => ok_json(playlist),
             Err(error) => error_json(error),
         },
         Err(error) => error_json(error),
@@ -82,9 +87,10 @@ pub unsafe extern "C" fn streambox_string_free(value: *mut c_char) {
     }
 }
 
-fn read_json<T: serde::de::DeserializeOwned>(input_json: *const c_char) -> Result<T, CoreError> {
+fn read_json_as<T: for<'de> Deserialize<'de>>(input_json: *const c_char) -> Result<T, CoreError> {
     let value = read_json_value(input_json)?;
-    serde_json::from_value(value).map_err(|error| CoreError::new("invalid_json", error.to_string()))
+    serde_json::from_value(value)
+        .map_err(|error| CoreError::new("invalid_request", error.to_string()))
 }
 
 fn read_json_value(input_json: *const c_char) -> Result<Value, CoreError> {

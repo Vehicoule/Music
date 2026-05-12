@@ -1,6 +1,15 @@
 # Streambox Backend
 
-FastAPI service for metadata search, stream source resolution, and local profile data.
+Legacy FastAPI fallback service for metadata search, stream source resolution,
+and local profile data while Streambox migrates to the native Rust core.
+
+## Legacy Status
+
+FastAPI remains the fallback backend for Flutter `CoreClient` methods that have
+not moved to Rust yet. Keep its routes and tests in place until Flutter no
+longer depends on them. Do not move this app into `backend/legacy_fastapi/`
+until playlists, favorites, history, source index, ranking, and plugin protocol
+decisions are stable. Track that work in `../docs/rust-core-migration.md`.
 
 ## Main Components
 

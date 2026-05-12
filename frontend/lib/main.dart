@@ -19,6 +19,10 @@ Future<void> main() async {
     'API_BASE_URL',
     defaultValue: 'http://127.0.0.1:8000',
   );
+  const useRustLocalLibrary = bool.fromEnvironment(
+    'USE_RUST_LOCAL_LIBRARY',
+    defaultValue: false,
+  );
 
   final apiClient = ApiClient(baseUrl: apiBaseUrl);
   final nativeCore = FfiNativeCore();
@@ -28,6 +32,9 @@ Future<void> main() async {
     rustCoreClient: RustCoreClient(
       nativeCore: nativeCore,
       fallbackApiClient: apiClient,
+    ),
+    routingConfig: const CoreClientRoutingConfig(
+      useRustLocalLibrary: useRustLocalLibrary,
     ),
   );
 

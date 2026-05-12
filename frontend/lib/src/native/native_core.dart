@@ -37,10 +37,9 @@ class NativeCoreHealth {
 abstract class NativeCore {
   Future<NativeCoreHealth> health();
   Future<Map<String, dynamic>> echoJson(Map<String, dynamic> input);
-  Future<Map<String, dynamic>> playlistsListJson(Map<String, dynamic> input);
-  Future<Map<String, dynamic>> playlistsCreateJson(Map<String, dynamic> input);
-  Future<Map<String, dynamic>> playlistsDeleteJson(Map<String, dynamic> input);
-  Future<Map<String, dynamic>> playlistsUpdateJson(Map<String, dynamic> input);
+  Future<Map<String, dynamic>> historyListJson(Map<String, dynamic> input);
+  Future<Map<String, dynamic>> historyAddJson(Map<String, dynamic> input);
+  Future<Map<String, dynamic>> historyClearJson(Map<String, dynamic> input);
 }
 
 class StaticNativeCore implements NativeCore {
@@ -60,47 +59,25 @@ class StaticNativeCore implements NativeCore {
   }
 
   @override
-  Future<Map<String, dynamic>> playlistsListJson(
+  Future<Map<String, dynamic>> historyListJson(
     Map<String, dynamic> input,
-  ) async =>
-      throw const NativeCoreUnsupportedException('playlistsListJson');
+  ) async {
+    return {'ok': false, 'error': {'code': 'unsupported'}};
+  }
 
   @override
-  Future<Map<String, dynamic>> playlistsCreateJson(
+  Future<Map<String, dynamic>> historyAddJson(
     Map<String, dynamic> input,
-  ) async =>
-      throw const NativeCoreUnsupportedException('playlistsCreateJson');
+  ) async {
+    return {'ok': false, 'error': {'code': 'unsupported'}};
+  }
 
   @override
-  Future<Map<String, dynamic>> playlistsDeleteJson(
+  Future<Map<String, dynamic>> historyClearJson(
     Map<String, dynamic> input,
-  ) async =>
-      throw const NativeCoreUnsupportedException('playlistsDeleteJson');
-
-  @override
-  Future<Map<String, dynamic>> playlistsUpdateJson(
-    Map<String, dynamic> input,
-  ) async =>
-      throw const NativeCoreUnsupportedException('playlistsUpdateJson');
-}
-
-class NativeCoreUnsupportedException implements Exception {
-  const NativeCoreUnsupportedException(this.operation);
-
-  final String operation;
-
-  @override
-  String toString() => 'Native core operation is unsupported: $operation';
-}
-
-class NativeCoreProtocolException implements Exception {
-  const NativeCoreProtocolException(this.code, this.message);
-
-  final String code;
-  final String message;
-
-  @override
-  String toString() => 'Native core protocol error $code: $message';
+  ) async {
+    return {'ok': false, 'error': {'code': 'unsupported'}};
+  }
 }
 
 class FfiNativeCore implements NativeCore {
@@ -123,9 +100,9 @@ class FfiNativeCore implements NativeCore {
 
     try {
       final version = _readOwnedString(library, 'streambox_version');
-      final platformInfo =
-          jsonDecode(_readOwnedString(library, 'streambox_platform_info_json'))
-              as Map<String, dynamic>;
+      final platformInfo = jsonDecode(
+        _readOwnedString(library, 'streambox_platform_info_json'),
+      ) as Map<String, dynamic>;
       return NativeCoreHealth(
         available: true,
         version: version,
@@ -150,63 +127,36 @@ class FfiNativeCore implements NativeCore {
   }
 
   @override
-  Future<Map<String, dynamic>> playlistsListJson(
+  Future<Map<String, dynamic>> historyListJson(
     Map<String, dynamic> input,
   ) async {
-    try {
-      return _callJson(
-        _openLibrary(),
-        'streambox_playlists_list_json',
-        input,
-      );
-    } on ArgumentError catch (exception) {
-      throw NativeCoreUnsupportedException(exception.toString());
-    }
+    return _callJson(
+      _openLibrary(),
+      'streambox_history_list_json',
+      input,
+    );
   }
 
   @override
-  Future<Map<String, dynamic>> playlistsCreateJson(
+  Future<Map<String, dynamic>> historyAddJson(
     Map<String, dynamic> input,
   ) async {
-    try {
-      return _callJson(
-        _openLibrary(),
-        'streambox_playlists_create_json',
-        input,
-      );
-    } on ArgumentError catch (exception) {
-      throw NativeCoreUnsupportedException(exception.toString());
-    }
+    return _callJson(
+      _openLibrary(),
+      'streambox_history_add_json',
+      input,
+    );
   }
 
   @override
-  Future<Map<String, dynamic>> playlistsDeleteJson(
+  Future<Map<String, dynamic>> historyClearJson(
     Map<String, dynamic> input,
   ) async {
-    try {
-      return _callJson(
-        _openLibrary(),
-        'streambox_playlists_delete_json',
-        input,
-      );
-    } on ArgumentError catch (exception) {
-      throw NativeCoreUnsupportedException(exception.toString());
-    }
-  }
-
-  @override
-  Future<Map<String, dynamic>> playlistsUpdateJson(
-    Map<String, dynamic> input,
-  ) async {
-    try {
-      return _callJson(
-        _openLibrary(),
-        'streambox_playlists_update_json',
-        input,
-      );
-    } on ArgumentError catch (exception) {
-      throw NativeCoreUnsupportedException(exception.toString());
-    }
+    return _callJson(
+      _openLibrary(),
+      'streambox_history_clear_json',
+      input,
+    );
   }
 
   DynamicLibrary _openLibrary() {
