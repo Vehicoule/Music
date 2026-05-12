@@ -24,3 +24,20 @@ pub struct PlatformInfo {
 pub struct EchoPayload {
     pub echo: Value,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HistoryAddRequest {
+    pub db_path: Option<String>,
+    pub item: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HistoryListRequest {
+    pub db_path: Option<String>,
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HistoryClearRequest {
+    pub db_path: Option<String>,
+}
