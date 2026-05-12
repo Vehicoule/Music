@@ -81,6 +81,24 @@ class Database:
             self._sync_source_index_version(db)
             db.executescript(
                 """
+                CREATE INDEX IF NOT EXISTS idx_favorites_created_at
+                ON favorites(created_at DESC);
+
+                CREATE INDEX IF NOT EXISTS idx_history_played_at
+                ON history(played_at DESC);
+
+                CREATE INDEX IF NOT EXISTS idx_playlists_updated_at
+                ON playlists(updated_at DESC);
+
+                CREATE INDEX IF NOT EXISTS idx_source_index_last_matched_at
+                ON source_index(last_matched_at DESC);
+
+                CREATE INDEX IF NOT EXISTS idx_source_index_source_kind
+                ON source_index(source_kind);
+                """
+            )
+            db.executescript(
+                """
                 DROP TABLE IF EXISTS source_index_fts;
 
                 CREATE VIRTUAL TABLE IF NOT EXISTS source_index_fts

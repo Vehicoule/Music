@@ -1,6 +1,6 @@
 import '../models.dart';
 
-typedef ResolveTrack = Future<ResolveResult> Function(
+typedef ResolveTrack = Future<ResolveResponse> Function(
   TrackMetadata track, {
   String? sourceUrl,
 });
