@@ -41,6 +41,10 @@ class RustCoreClient implements CoreClient {
     String query, {
     required String scope,
   }) async {
+    if (!_sourceIndexCacheableScope(scope)) {
+      return null;
+    }
+
     late final Map<String, dynamic> response;
     try {
       response = await nativeCore.sourceIndexSearchJson({
@@ -77,6 +81,16 @@ class RustCoreClient implements CoreClient {
       'items': entries.map(_sourceIndexDiscoverItemJson).toList(),
       'warnings': const [],
     });
+  }
+
+  bool _sourceIndexCacheableScope(String scope) {
+    switch (scope.toLowerCase()) {
+      case 'songs':
+      case 'videos':
+        return true;
+      default:
+        return false;
+    }
   }
 
   Future<void> _cacheSourceIndexItems(List<DiscoverItem> items) async {
