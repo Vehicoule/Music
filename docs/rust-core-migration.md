@@ -46,6 +46,34 @@ through `RustCoreClient`'s `fallbackApiClient`:
 When a method changes migration status, update this table in the same change that
 switches Flutter routing so the fallback surface remains visible.
 
+## Source Resolution Ownership
+
+`resolve()` and `sources()` remain FastAPI-backed for now. Flutter should keep
+routing source resolution requests through `POST /api/resolve` and source
+capability discovery through `GET /api/sources` until a replacement boundary is
+designed, implemented, and covered by contract tests.
+
+FastAPI continues to own source resolution during this migration phase because:
+
+- yt-dlp integration is external/process-based rather than an in-process Rust
+  library boundary today.
+- Provider behavior changes frequently, so keeping the current FastAPI adapter
+  layer avoids prematurely freezing volatile provider semantics into the Rust
+  core.
+- Source adapters may become plugins later, and the migration should not bake in
+  an ownership model before the plugin protocol is defined.
+
+Future source-resolution ownership must be decided explicitly. The supported
+options to evaluate are:
+
+- Keep FastAPI as an optional source service behind the existing HTTP contract.
+- Build a Rust plugin host that owns source adapter discovery and resolution.
+- Shell out from Rust to provider tools while defining Rust-owned process, cache,
+  error, and capability contracts.
+
+Do not remove FastAPI source routes until the replacement boundary is documented
+and contract tests prove compatibility for `resolve()` and `sources()` behavior.
+
 ## Migration Checklist
 
 Keep this checklist current. A box is only complete when the Rust path is wired
