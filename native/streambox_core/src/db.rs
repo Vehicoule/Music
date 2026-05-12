@@ -463,19 +463,7 @@ fn migrate_to_v2(transaction: &rusqlite::Transaction<'_>) -> Result<(), CoreErro
 }
 
 fn migrate_to_v3(transaction: &rusqlite::Transaction<'_>) -> Result<(), CoreError> {
-    transaction
-        .execute_batch(
-            r#"
-            CREATE TABLE IF NOT EXISTS metadata_cache (
-                cache_key TEXT PRIMARY KEY,
-                payload TEXT NOT NULL,
-                created_at INTEGER NOT NULL DEFAULT 0,
-                updated_at INTEGER NOT NULL DEFAULT 0
-            );
-            "#,
-        )
-        .map_err(sql_error)?;
-    ensure_metadata_cache_timestamps(transaction)
+    ensure_metadata_cache_schema(transaction)
 }
 
 fn migrate_to_v4(transaction: &rusqlite::Transaction<'_>) -> Result<(), CoreError> {
@@ -491,6 +479,22 @@ fn migrate_to_v4(transaction: &rusqlite::Transaction<'_>) -> Result<(), CoreErro
 
 fn migrate_to_v5(transaction: &rusqlite::Transaction<'_>) -> Result<(), CoreError> {
     ensure_source_index_schema(transaction).map(|_| ())
+}
+
+fn ensure_metadata_cache_schema(connection: &Connection) -> Result<(), CoreError> {
+    connection
+        .execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS metadata_cache (
+                cache_key TEXT PRIMARY KEY,
+                payload TEXT NOT NULL,
+                created_at INTEGER NOT NULL DEFAULT 0,
+                updated_at INTEGER NOT NULL DEFAULT 0
+            );
+            "#,
+        )
+        .map_err(sql_error)?;
+    ensure_metadata_cache_timestamps(connection)
 }
 
 fn ensure_metadata_cache_timestamps(connection: &Connection) -> Result<(), CoreError> {
@@ -524,19 +528,7 @@ fn ensure_metadata_cache_timestamps(connection: &Connection) -> Result<(), CoreE
 fn ensure_source_index_schema(
     connection: &Connection,
 ) -> Result<SourceIndexSchemaStatus, CoreError> {
-    connection
-        .execute_batch(
-            r#"
-            CREATE TABLE IF NOT EXISTS metadata_cache (
-                cache_key TEXT PRIMARY KEY,
-                payload TEXT NOT NULL,
-                created_at INTEGER NOT NULL DEFAULT 0,
-                updated_at INTEGER NOT NULL DEFAULT 0
-            );
-            "#,
-        )
-        .map_err(sql_error)?;
-    ensure_metadata_cache_timestamps(connection)?;
+    ensure_metadata_cache_schema(connection)?;
 
     let rebuilt = source_index_needs_rebuild(connection)?;
     if rebuilt {

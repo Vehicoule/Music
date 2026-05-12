@@ -81,6 +81,45 @@ fn source_index_search_filters_by_scope() {
 }
 
 #[test]
+fn source_index_schema_accepts_fastapi_metadata_cache() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("streambox.sqlite3");
+    let connection = Connection::open(&path).unwrap();
+    connection
+        .execute_batch(
+            "CREATE TABLE metadata_cache(
+                cache_key TEXT PRIMARY KEY,
+                payload TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );",
+        )
+        .unwrap();
+    drop(connection);
+
+    let status = rebuild_source_index(&path).unwrap();
+    assert!(status.rebuilt);
+
+    let connection = Connection::open(&path).unwrap();
+    let version: String = connection
+        .query_row(
+            "SELECT payload FROM metadata_cache WHERE cache_key = ?",
+            [SOURCE_INDEX_SCHEMA_KEY],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let updated_at: i64 = connection
+        .query_row(
+            "SELECT updated_at FROM metadata_cache WHERE cache_key = ?",
+            [SOURCE_INDEX_SCHEMA_KEY],
+            |row| row.get(0),
+        )
+        .unwrap();
+
+    assert_eq!(version, "\"4\"");
+    assert!(updated_at > 0);
+}
+
+#[test]
 fn source_index_schema_rebuilds_legacy_payload_table() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("streambox.sqlite3");
