@@ -10,6 +10,71 @@ import 'package:streambox/src/models.dart';
 import 'package:streambox/src/native/native_core.dart';
 
 void main() {
+  test('api client uses JSON detail for non-success responses', () async {
+    final apiClient = ApiClient(
+      baseUrl: 'http://127.0.0.1:8000',
+      httpClient: MockClient((request) async {
+        return http.Response(
+          jsonEncode({
+            'detail': {'message': 'missing track'},
+          }),
+          404,
+        );
+      }),
+    );
+
+    expect(
+      () => apiClient.search('missing'),
+      throwsA(
+        isA<ApiException>().having(
+          (error) => error.message,
+          'message',
+          'HTTP 404: {"message":"missing track"}',
+        ),
+      ),
+    );
+  });
+
+  test('api client falls back to raw body for non-JSON errors', () async {
+    final apiClient = ApiClient(
+      baseUrl: 'http://127.0.0.1:8000',
+      httpClient: MockClient((request) async {
+        return http.Response('upstream unavailable', 503);
+      }),
+    );
+
+    expect(
+      () => apiClient.search('anything'),
+      throwsA(
+        isA<ApiException>().having(
+          (error) => error.message,
+          'message',
+          'HTTP 503: upstream unavailable',
+        ),
+      ),
+    );
+  });
+
+  test('api client reports malformed successful JSON', () async {
+    final apiClient = ApiClient(
+      baseUrl: 'http://127.0.0.1:8000',
+      httpClient: MockClient((request) async {
+        return http.Response('{bad json', 200);
+      }),
+    );
+
+    expect(
+      () => apiClient.search('broken'),
+      throwsA(
+        isA<ApiException>().having(
+          (error) => error.message,
+          'message',
+          startsWith('Invalid JSON response:'),
+        ),
+      ),
+    );
+  });
+
   test('hybrid core client delegates unmigrated search to FastAPI', () async {
     final apiClient = ApiClient(
       baseUrl: 'http://127.0.0.1:8000',
