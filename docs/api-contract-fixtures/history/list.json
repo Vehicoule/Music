@@ -1,0 +1,73 @@
+{
+  "method": "GET",
+  "path": "/api/history",
+  "request": null,
+  "response_status": 200,
+  "response": [
+    {
+      "id": "playback-001",
+      "track": {
+        "id": "track-001",
+        "title": "Fixture Song",
+        "artists": [
+          {
+            "id": "artist-001",
+            "name": "Fixture Artist"
+          }
+        ],
+        "album": {
+          "id": "album-001",
+          "title": "Fixture Album",
+          "release_group_id": "release-group-001",
+          "artwork_url": "https://example.test/artwork/fixture-album.jpg"
+        },
+        "length_ms": 215000,
+        "score": 98,
+        "release_count": 3,
+        "listen_count": 1200,
+        "listener_count": 950,
+        "popularity_score": 0.87,
+        "confidence_score": 0.95,
+        "rank_reason": "Fixture contract match",
+        "artwork_url": "https://example.test/artwork/fixture-track.jpg",
+        "source_provider": "ytmusic",
+        "source_id": "yt-track-001",
+        "source_url": "https://music.youtube.com/watch?v=fixture001",
+        "source_kind": "song",
+        "raw_title": "Fixture Artist - Fixture Song",
+        "canonical_title": "Fixture Song",
+        "canonical_artist": "Fixture Artist",
+        "parse_source": "fixture",
+        "match_reasons": [
+          "title",
+          "artist"
+        ],
+        "source": "musicbrainz"
+      },
+      "source": {
+        "adapter": "ytmusic",
+        "url": "https://stream.example.test/fixture-001.m4a",
+        "title": "Fixture Song",
+        "mime_type": "audio/mp4",
+        "duration_seconds": 215.0,
+        "source_provider": "ytmusic",
+        "source_id": "yt-track-001",
+        "source_url": "https://music.youtube.com/watch?v=fixture001",
+        "source_kind": "song",
+        "raw_title": "Fixture Artist - Fixture Song",
+        "canonical_title": "Fixture Song",
+        "canonical_artist": "Fixture Artist",
+        "album_title": "Fixture Album",
+        "artwork_url": "https://example.test/artwork/fixture-track.jpg",
+        "parse_source": "fixture",
+        "confidence_score": 0.95,
+        "rank_reason": "Fixture contract match",
+        "is_live": false,
+        "headers": {
+          "User-Agent": "StreamboxFixture/1.0"
+        }
+      },
+      "added_at": "2026-05-12T12:00:00Z"
+    }
+  ]
+}
