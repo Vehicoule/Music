@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 
+import 'package:ffi/ffi.dart';
+
 class NativeCoreHealth {
   const NativeCoreHealth({
     required this.available,
@@ -34,6 +36,7 @@ class NativeCoreHealth {
 
 abstract class NativeCore {
   Future<NativeCoreHealth> health();
+  Future<Map<String, dynamic>> echoJson(Map<String, dynamic> input);
 }
 
 class StaticNativeCore implements NativeCore {
@@ -43,18 +46,27 @@ class StaticNativeCore implements NativeCore {
 
   @override
   Future<NativeCoreHealth> health() async => value;
+
+  @override
+  Future<Map<String, dynamic>> echoJson(Map<String, dynamic> input) async {
+    return {
+      'ok': true,
+      'data': {'echo': input},
+    };
+  }
 }
 
 class FfiNativeCore implements NativeCore {
   FfiNativeCore({String? libraryName}) : _libraryName = libraryName;
 
   final String? _libraryName;
+  DynamicLibrary? _library;
 
   @override
   Future<NativeCoreHealth> health() async {
     DynamicLibrary library;
     try {
-      library = DynamicLibrary.open(_libraryName ?? _defaultLibraryName());
+      library = _openLibrary();
     } catch (exception) {
       return NativeCoreHealth(
         available: false,
@@ -81,6 +93,21 @@ class FfiNativeCore implements NativeCore {
     }
   }
 
+  @override
+  Future<Map<String, dynamic>> echoJson(Map<String, dynamic> input) async {
+    final response = _callJson(
+      _openLibrary(),
+      'streambox_echo_json',
+      input,
+    );
+    return response;
+  }
+
+  DynamicLibrary _openLibrary() {
+    return _library ??=
+        DynamicLibrary.open(_libraryName ?? _defaultLibraryName());
+  }
+
   String _defaultLibraryName() {
     if (Platform.isWindows) {
       return 'streambox_core.dll';
@@ -94,14 +121,38 @@ class FfiNativeCore implements NativeCore {
 
 typedef _NativeString = Pointer<Char> Function();
 typedef _DartString = Pointer<Char> Function();
+typedef _NativeJsonCall = Pointer<Char> Function(Pointer<Char>);
+typedef _DartJsonCall = Pointer<Char> Function(Pointer<Char>);
 typedef _NativeFree = Void Function(Pointer<Char>);
 typedef _DartFree = void Function(Pointer<Char>);
 
 String _readOwnedString(DynamicLibrary library, String symbol) {
   final getString = library.lookupFunction<_NativeString, _DartString>(symbol);
+  final pointer = getString();
+  return _readAndFreeOwnedString(library, pointer);
+}
+
+Map<String, dynamic> _callJson(
+  DynamicLibrary library,
+  String symbol,
+  Map<String, dynamic> input,
+) {
+  final callJson =
+      library.lookupFunction<_NativeJsonCall, _DartJsonCall>(symbol);
+  final inputPointer =
+      jsonEncode(input).toNativeUtf8(allocator: calloc).cast<Char>();
+  try {
+    final outputPointer = callJson(inputPointer);
+    final output = _readAndFreeOwnedString(library, outputPointer);
+    return jsonDecode(output) as Map<String, dynamic>;
+  } finally {
+    calloc.free(inputPointer);
+  }
+}
+
+String _readAndFreeOwnedString(DynamicLibrary library, Pointer<Char> pointer) {
   final freeString =
       library.lookupFunction<_NativeFree, _DartFree>('streambox_string_free');
-  final pointer = getString();
   if (pointer == nullptr) {
     return '';
   }
