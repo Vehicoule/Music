@@ -19,8 +19,8 @@ pub struct CoreDb {
 impl CoreDb {
     pub fn open(path: Option<&str>) -> Result<Self, CoreError> {
         let path = resolve_db_path(path)?;
-        let connection = connect(&path)?;
-        init_schema(&connection)?;
+        let mut connection = connect(&path)?;
+        init_schema(&mut connection)?;
         Ok(Self { connection })
     }
 
@@ -111,8 +111,8 @@ pub fn default_database_path() -> PathBuf {
 }
 
 pub fn init_database(path: impl AsRef<Path>) -> Result<(), CoreError> {
-    let connection = connect(path.as_ref())?;
-    init_schema(&connection)
+    let mut connection = connect(path.as_ref())?;
+    init_schema(&mut connection)
 }
 
 pub fn db_health(path: impl AsRef<Path>) -> Result<DbHealth, CoreError> {
@@ -256,8 +256,8 @@ pub fn remove_favorite(path: impl AsRef<Path>, favorite_id: &str) -> Result<(), 
 }
 
 fn open_initialized(path: &Path) -> Result<Connection, CoreError> {
-    let connection = connect(path)?;
-    init_schema(&connection)?;
+    let mut connection = connect(path)?;
+    init_schema(&mut connection)?;
     Ok(connection)
 }
 
@@ -276,12 +276,49 @@ fn connect(path: &Path) -> Result<Connection, CoreError> {
     Ok(connection)
 }
 
-fn init_schema(connection: &Connection) -> Result<(), CoreError> {
-    connection
-        .execute_batch(&format!(
-            r#"
-            PRAGMA foreign_keys = ON;
+fn init_schema(connection: &mut Connection) -> Result<(), CoreError> {
+    let current_version = connection
+        .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+        .map_err(sql_error)?;
 
+    if current_version > SCHEMA_VERSION {
+        return Err(CoreError::new(
+            "unsupported_schema_version",
+            format!(
+                "Database schema version {current_version} is newer than supported version {SCHEMA_VERSION}"
+            ),
+        ));
+    }
+
+    if current_version == SCHEMA_VERSION {
+        return Ok(());
+    }
+
+    let transaction = connection.transaction().map_err(sql_error)?;
+    for version in (current_version + 1)..=SCHEMA_VERSION {
+        match version {
+            1 => migrate_to_v1(&transaction)?,
+            2 => migrate_to_v2(&transaction)?,
+            3 => migrate_to_v3(&transaction)?,
+            4 => migrate_to_v4(&transaction)?,
+            _ => {
+                return Err(CoreError::new(
+                    "unsupported_schema_version",
+                    format!("No migration registered for schema version {version}"),
+                ));
+            }
+        }
+    }
+    transaction
+        .pragma_update(None, "user_version", SCHEMA_VERSION)
+        .map_err(sql_error)?;
+    transaction.commit().map_err(sql_error)
+}
+
+fn migrate_to_v1(transaction: &rusqlite::Transaction<'_>) -> Result<(), CoreError> {
+    transaction
+        .execute_batch(
+            r#"
             CREATE TABLE IF NOT EXISTS history (
                 id TEXT PRIMARY KEY,
                 item_json TEXT NOT NULL,
@@ -293,7 +330,15 @@ fn init_schema(connection: &Connection) -> Result<(), CoreError> {
                 item_json TEXT NOT NULL,
                 created_at INTEGER NOT NULL
             );
+            "#,
+        )
+        .map_err(sql_error)
+}
 
+fn migrate_to_v2(transaction: &rusqlite::Transaction<'_>) -> Result<(), CoreError> {
+    transaction
+        .execute_batch(
+            r#"
             CREATE TABLE IF NOT EXISTS playlists (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -308,13 +353,29 @@ fn init_schema(connection: &Connection) -> Result<(), CoreError> {
                 item_json TEXT NOT NULL,
                 PRIMARY KEY (playlist_id, position)
             );
+            "#,
+        )
+        .map_err(sql_error)
+}
 
+fn migrate_to_v3(transaction: &rusqlite::Transaction<'_>) -> Result<(), CoreError> {
+    transaction
+        .execute_batch(
+            r#"
             CREATE TABLE IF NOT EXISTS metadata_cache (
                 cache_key TEXT PRIMARY KEY,
                 payload TEXT NOT NULL,
                 updated_at INTEGER NOT NULL
             );
+            "#,
+        )
+        .map_err(sql_error)
+}
 
+fn migrate_to_v4(transaction: &rusqlite::Transaction<'_>) -> Result<(), CoreError> {
+    transaction
+        .execute_batch(
+            r#"
             CREATE TABLE IF NOT EXISTS source_index (
                 id TEXT PRIMARY KEY,
                 title TEXT NOT NULL DEFAULT '',
@@ -333,10 +394,8 @@ fn init_schema(connection: &Connection) -> Result<(), CoreError> {
 
             INSERT OR REPLACE INTO metadata_cache(cache_key, payload, updated_at)
             VALUES ('source-index:schema-version:v4', '"4"', strftime('%s', 'now'));
-
-            PRAGMA user_version = {SCHEMA_VERSION};
-            "#
-        ))
+            "#,
+        )
         .map_err(sql_error)
 }
 
