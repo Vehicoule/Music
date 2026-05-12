@@ -1,7 +1,7 @@
 use std::ffi::{CStr, CString};
 
 use rusqlite::Connection;
-use serde_json::Value;
+use serde_json::{json, Value};
 use streambox_core::db::{db_health, SCHEMA_VERSION};
 use streambox_core::ffi::{
     streambox_db_health_json, streambox_echo_json, streambox_health_json,
@@ -111,7 +111,7 @@ fn initializes_sqlite_schema_at_temporary_path() {
 fn db_health_ffi_uses_existing_json_error_protocol() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("ffi.sqlite3");
-    let input = CString::new(format!(r#"{{"path":"{}"}}"#, db_path.display())).unwrap();
+    let input = CString::new(json!({ "path": db_path }).to_string()).unwrap();
 
     let output = unsafe { take_owned_json(streambox_db_health_json(input.as_ptr())) };
 
