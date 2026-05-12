@@ -1,6 +1,7 @@
 import '../api_client.dart';
 import '../models.dart';
 import '../native/native_core.dart';
+import 'rust_core_client.dart';
 
 abstract class CoreClient {
   Future<DiscoverResponse> discover(String query, {String scope = 'all'});
@@ -32,7 +33,7 @@ class CoreClientRoutingConfig {
 }
 
 class HybridCoreClient implements CoreClient {
-  const HybridCoreClient({
+  HybridCoreClient({
     required this.apiClient,
     required this.nativeCore,
     this.rustCoreClient,
