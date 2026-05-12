@@ -1,12 +1,18 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use crate::db::db_health;
 use crate::error::CoreError;
 use crate::models::EchoPayload;
 use crate::{health_json, platform_info, version};
+
+#[derive(Debug, Deserialize)]
+struct DbHealthRequest {
+    path: String,
+}
 
 #[no_mangle]
 pub extern "C" fn streambox_version() -> *mut c_char {
@@ -32,10 +38,24 @@ pub unsafe extern "C" fn streambox_echo_json(input_json: *const c_char) -> *mut 
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn streambox_db_health_json(input_json: *const c_char) -> *mut c_char {
+    match read_json_as::<DbHealthRequest>(input_json).and_then(|request| db_health(request.path)) {
+        Ok(health) => ok_json(health),
+        Err(error) => error_json(error),
+    }
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn streambox_string_free(value: *mut c_char) {
     if !value.is_null() {
         let _ = CString::from_raw(value);
     }
+}
+
+fn read_json_as<T: for<'de> Deserialize<'de>>(input_json: *const c_char) -> Result<T, CoreError> {
+    let value = read_json_value(input_json)?;
+    serde_json::from_value(value)
+        .map_err(|error| CoreError::new("invalid_request", error.to_string()))
 }
 
 fn read_json_value(input_json: *const c_char) -> Result<Value, CoreError> {
