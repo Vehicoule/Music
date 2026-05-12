@@ -1,5 +1,7 @@
+pub mod db;
 pub mod error;
 pub mod ffi;
+pub mod history;
 pub mod models;
 
 pub use models::{CoreHealth, HealthJson, PlatformInfo};

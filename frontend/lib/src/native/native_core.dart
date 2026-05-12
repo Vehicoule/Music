@@ -37,6 +37,9 @@ class NativeCoreHealth {
 abstract class NativeCore {
   Future<NativeCoreHealth> health();
   Future<Map<String, dynamic>> echoJson(Map<String, dynamic> input);
+  Future<Map<String, dynamic>> historyListJson(Map<String, dynamic> input);
+  Future<Map<String, dynamic>> historyAddJson(Map<String, dynamic> input);
+  Future<Map<String, dynamic>> historyClearJson(Map<String, dynamic> input);
 }
 
 class StaticNativeCore implements NativeCore {
@@ -53,6 +56,27 @@ class StaticNativeCore implements NativeCore {
       'ok': true,
       'data': {'echo': input},
     };
+  }
+
+  @override
+  Future<Map<String, dynamic>> historyListJson(
+    Map<String, dynamic> input,
+  ) async {
+    return {'ok': false, 'error': {'code': 'unsupported'}};
+  }
+
+  @override
+  Future<Map<String, dynamic>> historyAddJson(
+    Map<String, dynamic> input,
+  ) async {
+    return {'ok': false, 'error': {'code': 'unsupported'}};
+  }
+
+  @override
+  Future<Map<String, dynamic>> historyClearJson(
+    Map<String, dynamic> input,
+  ) async {
+    return {'ok': false, 'error': {'code': 'unsupported'}};
   }
 }
 
@@ -95,12 +119,44 @@ class FfiNativeCore implements NativeCore {
 
   @override
   Future<Map<String, dynamic>> echoJson(Map<String, dynamic> input) async {
-    final response = _callJson(
+    return _callJson(
       _openLibrary(),
       'streambox_echo_json',
       input,
     );
-    return response;
+  }
+
+  @override
+  Future<Map<String, dynamic>> historyListJson(
+    Map<String, dynamic> input,
+  ) async {
+    return _callJson(
+      _openLibrary(),
+      'streambox_history_list_json',
+      input,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> historyAddJson(
+    Map<String, dynamic> input,
+  ) async {
+    return _callJson(
+      _openLibrary(),
+      'streambox_history_add_json',
+      input,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> historyClearJson(
+    Map<String, dynamic> input,
+  ) async {
+    return _callJson(
+      _openLibrary(),
+      'streambox_history_clear_json',
+      input,
+    );
   }
 
   DynamicLibrary _openLibrary() {

@@ -5,7 +5,8 @@ use serde::Serialize;
 use serde_json::{json, Value};
 
 use crate::error::CoreError;
-use crate::models::EchoPayload;
+use crate::history;
+use crate::models::{EchoPayload, HistoryAddRequest, HistoryClearRequest, HistoryListRequest};
 use crate::{health_json, platform_info, version};
 
 #[no_mangle]
@@ -27,6 +28,48 @@ pub extern "C" fn streambox_platform_info_json() -> *mut c_char {
 pub unsafe extern "C" fn streambox_echo_json(input_json: *const c_char) -> *mut c_char {
     match read_json_value(input_json) {
         Ok(value) => ok_json(EchoPayload { echo: value }),
+        Err(error) => error_json(error),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn streambox_history_list_json(input_json: *const c_char) -> *mut c_char {
+    match read_json_value(input_json).and_then(|value| {
+        serde_json::from_value::<HistoryListRequest>(value)
+            .map_err(|error| CoreError::new("invalid_history_request", error.to_string()))
+    }) {
+        Ok(request) => match history::list_history(request.db_path.as_deref(), request.limit) {
+            Ok(items) => ok_json(items),
+            Err(error) => error_json(error),
+        },
+        Err(error) => error_json(error),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn streambox_history_add_json(input_json: *const c_char) -> *mut c_char {
+    match read_json_value(input_json).and_then(|value| {
+        serde_json::from_value::<HistoryAddRequest>(value)
+            .map_err(|error| CoreError::new("invalid_history_request", error.to_string()))
+    }) {
+        Ok(request) => match history::add_history(request.db_path.as_deref(), request.item) {
+            Ok(item) => ok_json(item),
+            Err(error) => error_json(error),
+        },
+        Err(error) => error_json(error),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn streambox_history_clear_json(input_json: *const c_char) -> *mut c_char {
+    match read_json_value(input_json).and_then(|value| {
+        serde_json::from_value::<HistoryClearRequest>(value)
+            .map_err(|error| CoreError::new("invalid_history_request", error.to_string()))
+    }) {
+        Ok(request) => match history::clear_history(request.db_path.as_deref()) {
+            Ok(()) => ok_json(json!({})),
+            Err(error) => error_json(error),
+        },
         Err(error) => error_json(error),
     }
 }
