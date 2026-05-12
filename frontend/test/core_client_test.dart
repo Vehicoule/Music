@@ -228,6 +228,24 @@ void main() {
     expect(health.error, contains('missing_streambox_core'));
   });
 
+  test('rust core client falls back when Rust DB health is unavailable', () async {
+    final rustClient = RustCoreClient(
+      fallbackApiClient: ApiClient(baseUrl: 'http://127.0.0.1:8000'),
+      nativeCore: const StaticNativeCore(
+        NativeCoreHealth(available: false, error: 'missing native library'),
+      ),
+    );
+
+    final health = await rustClient.nativeDbHealth();
+
+    expect(health.available, isFalse);
+    expect(health.error, 'unsupported');
+    expect(
+      health.diagnosticLabels.single,
+      'Rust DB health unavailable: unsupported',
+    );
+  });
+
   test('hybrid core client routes local playlists to Rust when enabled',
       () async {
     final rustClient = _RecordingCoreClient(
@@ -391,6 +409,9 @@ class _RecordingCoreClient implements CoreClient {
   Future<NativeCoreHealth> nativeHealth() => throw UnimplementedError();
 
   @override
+  Future<NativeDbHealth> nativeDbHealth() => throw UnimplementedError();
+
+  @override
   Future<ResolveResponse> resolve(
     TrackMetadata track, {
     List<String> adapters = const [],
@@ -421,6 +442,11 @@ class _FavoritesNativeCore implements NativeCore {
 
   final Map<String, dynamic> listResponse;
   var listCalls = 0;
+
+  @override
+  Future<Map<String, dynamic>> dbHealthJson(String databasePath) async {
+    return _unsupported();
+  }
 
   @override
   Future<Map<String, dynamic>> echoJson(Map<String, dynamic> input) async {
