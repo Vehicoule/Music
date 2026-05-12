@@ -127,7 +127,7 @@ class ApiClient {
   }
 
   Future<void> unfavorite(String favoriteId) async {
-    await _delete(Uri.parse('$baseUrl/api/favorites/$favoriteId'));
+    await _deleteJson(Uri.parse('$baseUrl/api/favorites/$favoriteId'));
   }
 
   Future<void> addHistory(PlaybackItem item) async {
