@@ -429,6 +429,41 @@ void main() {
     expect(health.error, contains('missing_streambox_core'));
   });
 
+  test('rust core client exposes successful Rust DB health diagnostics', () async {
+    final nativeCore = _DbHealthNativeCore({
+      'ok': true,
+      'data': {
+        'path': '/tmp/streambox-health.sqlite3',
+        'schema_version': 3,
+        'user_version': 3,
+        'foreign_keys_enabled': true,
+      },
+    });
+    final rustClient = RustCoreClient(
+      fallbackApiClient: ApiClient(baseUrl: 'http://127.0.0.1:8000'),
+      nativeCore: nativeCore,
+      databasePath: '/tmp/streambox-health.sqlite3',
+    );
+
+    final health = await rustClient.nativeDbHealth();
+
+    expect(nativeCore.dbHealthPaths.single, '/tmp/streambox-health.sqlite3');
+    expect(health.available, isTrue);
+    expect(health.path, '/tmp/streambox-health.sqlite3');
+    expect(health.schemaVersion, 3);
+    expect(health.userVersion, 3);
+    expect(health.foreignKeysEnabled, isTrue);
+    expect(
+      health.diagnosticLabels,
+      containsAllInOrder([
+        'DB path: /tmp/streambox-health.sqlite3',
+        'Schema version: 3',
+        'User version: 3',
+        'Foreign keys enabled: yes',
+      ]),
+    );
+  });
+
   test('rust core client falls back when Rust DB health is unavailable', () async {
     final rustClient = RustCoreClient(
       fallbackApiClient: ApiClient(baseUrl: 'http://127.0.0.1:8000'),
@@ -990,6 +1025,20 @@ PlaybackItem _samplePlaybackItem() {
   );
 }
 
+class _DbHealthNativeCore extends StaticNativeCore {
+  _DbHealthNativeCore(this.response)
+      : super(const NativeCoreHealth(available: true, platform: 'test'));
+
+  final Map<String, dynamic> response;
+  final dbHealthPaths = <String>[];
+
+  @override
+  Future<Map<String, dynamic>> dbHealthJson(String databasePath) async {
+    dbHealthPaths.add(databasePath);
+    return response;
+  }
+}
+
 class _SourceIndexNativeCore extends StaticNativeCore {
   const _SourceIndexNativeCore(this.searchResponse)
       : super(const NativeCoreHealth(available: true, platform: 'test'));
@@ -1189,6 +1238,11 @@ class _ContractNativeCore implements NativeCore {
   final historyClearInputs = <Map<String, dynamic>>[];
 
   @override
+  Future<Map<String, dynamic>> dbHealthJson(String databasePath) async {
+    return _unsupportedResponse;
+  }
+
+  @override
   Future<Map<String, dynamic>> echoJson(Map<String, dynamic> input) async {
     return {
       'ok': true,
@@ -1285,5 +1339,33 @@ class _ContractNativeCore implements NativeCore {
       version: 'streambox-core 0.1.0',
       platform: 'test-platform',
     );
+  }
+
+  @override
+  Future<Map<String, dynamic>> sourceIndexClearJson(
+    Map<String, dynamic> input,
+  ) async {
+    return _unsupportedResponse;
+  }
+
+  @override
+  Future<Map<String, dynamic>> sourceIndexRebuildJson(
+    Map<String, dynamic> input,
+  ) async {
+    return _unsupportedResponse;
+  }
+
+  @override
+  Future<Map<String, dynamic>> sourceIndexSearchJson(
+    Map<String, dynamic> input,
+  ) async {
+    return _unsupportedResponse;
+  }
+
+  @override
+  Future<Map<String, dynamic>> sourceIndexUpsertJson(
+    Map<String, dynamic> input,
+  ) async {
+    return _unsupportedResponse;
   }
 }
