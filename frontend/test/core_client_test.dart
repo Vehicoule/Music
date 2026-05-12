@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:streambox/src/api_client.dart';
 import 'package:streambox/src/core/core_client.dart';
+import 'package:streambox/src/core/rust_core_client.dart';
 import 'package:streambox/src/native/native_core.dart';
 
 void main() {
@@ -52,6 +53,29 @@ void main() {
     expect(result.available, isTrue);
     expect(result.version, 'streambox-core 0.1.0');
     expect(result.platform, 'test-platform');
+  });
+
+  test('rust core client forwards echo JSON through native core', () async {
+    final rustCoreClient = RustCoreClient(
+      nativeCore: const StaticNativeCore(
+        NativeCoreHealth(
+          available: true,
+          version: 'streambox-core 0.1.0',
+          platform: 'test-platform',
+        ),
+      ),
+    );
+
+    final result = await rustCoreClient.echoJson({
+      'message': 'bonjour',
+      'nested': {'count': 1},
+    });
+
+    expect(result['ok'], isTrue);
+    expect(result['echo'], {
+      'message': 'bonjour',
+      'nested': {'count': 1},
+    });
   });
 
   test('native core ffi reports unavailable when the library cannot be loaded',

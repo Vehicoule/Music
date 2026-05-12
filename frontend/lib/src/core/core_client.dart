@@ -1,6 +1,7 @@
 import '../api_client.dart';
 import '../models.dart';
 import '../native/native_core.dart';
+import 'rust_core_client.dart';
 
 abstract class CoreClient {
   Future<DiscoverResponse> discover(String query, {String scope = 'all'});
@@ -24,13 +25,16 @@ abstract class CoreClient {
 }
 
 class HybridCoreClient implements CoreClient {
-  const HybridCoreClient({
+  HybridCoreClient({
     required this.apiClient,
     required this.nativeCore,
-  });
+    RustCoreClient? rustCoreClient,
+  }) : rustCoreClient =
+            rustCoreClient ?? RustCoreClient(nativeCore: nativeCore);
 
   final ApiClient apiClient;
   final NativeCore nativeCore;
+  final RustCoreClient rustCoreClient;
 
   @override
   Future<DiscoverResponse> discover(String query, {String scope = 'all'}) {
@@ -88,5 +92,5 @@ class HybridCoreClient implements CoreClient {
   Future<List<PlaybackItem>> history() => apiClient.history();
 
   @override
-  Future<NativeCoreHealth> nativeHealth() => nativeCore.health();
+  Future<NativeCoreHealth> nativeHealth() => rustCoreClient.nativeHealth();
 }
