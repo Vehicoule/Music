@@ -100,9 +100,9 @@ class FfiNativeCore implements NativeCore {
 
     try {
       final version = _readOwnedString(library, 'streambox_version');
-      final platformInfo =
-          jsonDecode(_readOwnedString(library, 'streambox_platform_info_json'))
-              as Map<String, dynamic>;
+      final platformInfo = jsonDecode(
+        _readOwnedString(library, 'streambox_platform_info_json'),
+      ) as Map<String, dynamic>;
       return NativeCoreHealth(
         available: true,
         version: version,
