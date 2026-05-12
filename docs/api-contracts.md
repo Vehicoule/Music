@@ -1,9 +1,11 @@
 # Streambox API Contracts
 
 This document freezes the current FastAPI contract while the app migrates to a
-serverless native Rust core. During migration, Flutter may call Rust for
-migrated features and FastAPI for unmigrated features, but these response shapes
-remain the compatibility baseline.
+serverless native Rust core. FastAPI is a legacy fallback backend during this
+migration: Flutter may call Rust for migrated features and FastAPI for
+unmigrated features, but these response shapes remain the compatibility
+baseline. Do not remove a FastAPI route until Flutter no longer depends on the
+matching contract.
 
 ## Search And Discovery
 
@@ -32,3 +34,5 @@ remain the compatibility baseline.
 - `GET /api/history`, `POST /api/history`
 
 These are the first features planned for migration to Rust-owned SQLite.
+
+See [Rust Core Migration](rust-core-migration.md) for the current FastAPI-only `CoreClient` surface, migration checklist, and decommission gates.
