@@ -104,6 +104,10 @@ class ApiClient {
         Uri.parse('$baseUrl/api/favorites'), {'item': item.toJson()});
   }
 
+  Future<void> unfavorite(String favoriteId) async {
+    await _delete(Uri.parse('$baseUrl/api/favorites/$favoriteId'));
+  }
+
   Future<void> addHistory(PlaybackItem item) async {
     await _postJson(Uri.parse('$baseUrl/api/history'), {'item': item.toJson()});
   }
@@ -127,6 +131,11 @@ class ApiClient {
       body: jsonEncode(payload),
     );
     return _decode(response);
+  }
+
+  Future<void> _delete(Uri uri) async {
+    final response = await _httpClient.delete(uri);
+    _decode(response);
   }
 
   dynamic _decode(http.Response response) {

@@ -2,7 +2,9 @@ use std::ffi::{CStr, CString};
 
 use serde_json::Value;
 use streambox_core::ffi::{
-    streambox_echo_json, streambox_health_json, streambox_platform_info_json, streambox_string_free,
+    streambox_echo_json, streambox_favorites_add_json, streambox_favorites_list_json,
+    streambox_favorites_remove_json, streambox_health_json, streambox_platform_info_json,
+    streambox_string_free,
 };
 use streambox_core::{health, platform_info, version};
 
@@ -39,6 +41,57 @@ fn echoes_json_through_ffi_protocol() {
     assert_eq!(output["ok"], true);
     assert_eq!(output["data"]["echo"]["message"], "bonjour");
     assert_eq!(output["data"]["echo"]["count"], 2);
+}
+
+#[test]
+fn favorites_ffi_adds_lists_duplicates_and_removes_by_id() {
+    let db_path = std::env::temp_dir().join(format!(
+        "streambox-core-favorites-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&db_path);
+    let db_path = db_path.to_string_lossy();
+    let item = r#"{"id":"item-1","track":{"id":"track-1","title":"Test Song","artists":[]},"source":null}"#;
+
+    let first_input = CString::new(format!(
+        r#"{{"database_path":"{}","item":{}}}"#,
+        db_path, item
+    ))
+    .unwrap();
+    let first = unsafe { take_owned_json(streambox_favorites_add_json(first_input.as_ptr())) };
+    assert_eq!(first["ok"], true);
+    assert_eq!(first["data"]["item"]["track"]["title"], "Test Song");
+
+    let duplicate_input = CString::new(format!(
+        r#"{{"database_path":"{}","item":{}}}"#,
+        db_path, item
+    ))
+    .unwrap();
+    let duplicate =
+        unsafe { take_owned_json(streambox_favorites_add_json(duplicate_input.as_ptr())) };
+    assert_eq!(duplicate["ok"], true);
+    assert_ne!(first["data"]["id"], duplicate["data"]["id"]);
+
+    let list_input = CString::new(format!(r#"{{"database_path":"{}"}}"#, db_path)).unwrap();
+    let list = unsafe { take_owned_json(streambox_favorites_list_json(list_input.as_ptr())) };
+    assert_eq!(list["ok"], true);
+    assert_eq!(list["data"].as_array().unwrap().len(), 2);
+
+    let remove_input = CString::new(format!(
+        r#"{{"database_path":"{}","id":"{}"}}"#,
+        db_path,
+        first["data"]["id"].as_str().unwrap()
+    ))
+    .unwrap();
+    let remove = unsafe { take_owned_json(streambox_favorites_remove_json(remove_input.as_ptr())) };
+    assert_eq!(remove["ok"], true);
+
+    let list_input = CString::new(format!(r#"{{"database_path":"{}"}}"#, db_path)).unwrap();
+    let list = unsafe { take_owned_json(streambox_favorites_list_json(list_input.as_ptr())) };
+    assert_eq!(list["data"].as_array().unwrap().len(), 1);
+    assert_eq!(list["data"][0]["id"], duplicate["data"]["id"]);
+
+    let _ = std::fs::remove_file(db_path.as_ref());
 }
 
 #[test]

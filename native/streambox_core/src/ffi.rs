@@ -5,7 +5,8 @@ use serde::Serialize;
 use serde_json::{json, Value};
 
 use crate::error::CoreError;
-use crate::models::EchoPayload;
+use crate::favorites;
+use crate::models::{DatabaseRequest, EchoPayload, FavoriteCreate, FavoriteDelete};
 use crate::{health_json, platform_info, version};
 
 #[no_mangle]
@@ -32,13 +33,52 @@ pub unsafe extern "C" fn streambox_echo_json(input_json: *const c_char) -> *mut 
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn streambox_favorites_list_json(input_json: *const c_char) -> *mut c_char {
+    match read_json::<DatabaseRequest<serde_json::Map<String, Value>>>(input_json)
+        .and_then(|request| favorites::list_favorites(request.database_path))
+    {
+        Ok(favorites) => ok_json(favorites),
+        Err(error) => error_json(error),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn streambox_favorites_add_json(input_json: *const c_char) -> *mut c_char {
+    match read_json::<DatabaseRequest<FavoriteCreate>>(input_json)
+        .and_then(|request| favorites::add_favorite(request.database_path, request.payload.item))
+    {
+        Ok(favorite) => ok_json(favorite),
+        Err(error) => error_json(error),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn streambox_favorites_remove_json(input_json: *const c_char) -> *mut c_char {
+    match read_json::<DatabaseRequest<FavoriteDelete>>(input_json)
+        .and_then(|request| favorites::remove_favorite(request.database_path, &request.payload.id))
+    {
+        Ok(()) => ok_json(Value::Null),
+        Err(error) => error_json(error),
+    }
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn streambox_string_free(value: *mut c_char) {
     if !value.is_null() {
         let _ = CString::from_raw(value);
     }
 }
 
+fn read_json<T: serde::de::DeserializeOwned>(input_json: *const c_char) -> Result<T, CoreError> {
+    let value = read_json_string(input_json)?;
+    serde_json::from_str(&value).map_err(|error| CoreError::new("invalid_json", error.to_string()))
+}
+
 fn read_json_value(input_json: *const c_char) -> Result<Value, CoreError> {
+    read_json(input_json)
+}
+
+fn read_json_string(input_json: *const c_char) -> Result<String, CoreError> {
     if input_json.is_null() {
         return Err(CoreError::new(
             "null_input",
@@ -48,7 +88,7 @@ fn read_json_value(input_json: *const c_char) -> Result<Value, CoreError> {
     let input = unsafe { CStr::from_ptr(input_json) }
         .to_str()
         .map_err(|error| CoreError::new("invalid_utf8", error.to_string()))?;
-    serde_json::from_str(input).map_err(|error| CoreError::new("invalid_json", error.to_string()))
+    Ok(input.to_string())
 }
 
 fn ok_json<T: Serialize>(data: T) -> *mut c_char {

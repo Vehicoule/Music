@@ -37,6 +37,15 @@ class NativeCoreHealth {
 abstract class NativeCore {
   Future<NativeCoreHealth> health();
   Future<Map<String, dynamic>> echoJson(Map<String, dynamic> input);
+  Future<Map<String, dynamic>> favoritesListJson(String databasePath);
+  Future<Map<String, dynamic>> favoritesAddJson(
+    String databasePath,
+    Map<String, dynamic> item,
+  );
+  Future<Map<String, dynamic>> favoritesRemoveJson(
+    String databasePath,
+    String favoriteId,
+  );
 }
 
 class StaticNativeCore implements NativeCore {
@@ -53,6 +62,34 @@ class StaticNativeCore implements NativeCore {
       'ok': true,
       'data': {'echo': input},
     };
+  }
+
+  @override
+  Future<Map<String, dynamic>> favoritesListJson(String databasePath) async {
+    return {'ok': true, 'data': <dynamic>[]};
+  }
+
+  @override
+  Future<Map<String, dynamic>> favoritesAddJson(
+    String databasePath,
+    Map<String, dynamic> item,
+  ) async {
+    return {
+      'ok': true,
+      'data': {
+        'id': 'static-favorite',
+        'item': item,
+        'created_at': DateTime.now().toUtc().toIso8601String(),
+      },
+    };
+  }
+
+  @override
+  Future<Map<String, dynamic>> favoritesRemoveJson(
+    String databasePath,
+    String favoriteId,
+  ) async {
+    return {'ok': true, 'data': null};
   }
 }
 
@@ -101,6 +138,39 @@ class FfiNativeCore implements NativeCore {
       input,
     );
     return response;
+  }
+
+  @override
+  Future<Map<String, dynamic>> favoritesListJson(String databasePath) async {
+    return _callJson(
+      _openLibrary(),
+      'streambox_favorites_list_json',
+      {'database_path': databasePath},
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> favoritesAddJson(
+    String databasePath,
+    Map<String, dynamic> item,
+  ) async {
+    return _callJson(
+      _openLibrary(),
+      'streambox_favorites_add_json',
+      {'database_path': databasePath, 'item': item},
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> favoritesRemoveJson(
+    String databasePath,
+    String favoriteId,
+  ) async {
+    return _callJson(
+      _openLibrary(),
+      'streambox_favorites_remove_json',
+      {'database_path': databasePath, 'id': favoriteId},
+    );
   }
 
   DynamicLibrary _openLibrary() {

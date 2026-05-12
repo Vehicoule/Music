@@ -7,10 +7,12 @@ class RustCoreClient implements CoreClient {
   const RustCoreClient({
     required this.nativeCore,
     required this.fallbackApiClient,
+    this.databasePath = 'data/streambox.sqlite3',
   });
 
   final NativeCore nativeCore;
   final ApiClient fallbackApiClient;
+  final String databasePath;
 
   Future<Map<String, dynamic>> echoJson(Map<String, dynamic> input) {
     return nativeCore.echoJson(input);
@@ -64,10 +66,31 @@ class RustCoreClient implements CoreClient {
   }
 
   @override
-  Future<List<Favorite>> favorites() => fallbackApiClient.favorites();
+  Future<List<Favorite>> favorites() async {
+    final response = await nativeCore.favoritesListJson(databasePath);
+    final data = _unwrapJsonProtocol(response) as List<dynamic>;
+    return data
+        .map((item) => Favorite.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
 
   @override
-  Future<void> favorite(PlaybackItem item) => fallbackApiClient.favorite(item);
+  Future<void> favorite(PlaybackItem item) async {
+    final response = await nativeCore.favoritesAddJson(
+      databasePath,
+      item.toJson(),
+    );
+    _unwrapJsonProtocol(response);
+  }
+
+  @override
+  Future<void> unfavorite(String favoriteId) async {
+    final response = await nativeCore.favoritesRemoveJson(
+      databasePath,
+      favoriteId,
+    );
+    _unwrapJsonProtocol(response);
+  }
 
   @override
   Future<void> addHistory(PlaybackItem item) {
@@ -79,4 +102,17 @@ class RustCoreClient implements CoreClient {
 
   @override
   Future<NativeCoreHealth> nativeHealth() => nativeCore.health();
+
+  dynamic _unwrapJsonProtocol(Map<String, dynamic> response) {
+    if (response['ok'] == true) {
+      return response['data'];
+    }
+    final error = response['error'];
+    if (error is Map<String, dynamic>) {
+      throw StateError(
+        '${error['code'] ?? 'native_error'}: ${error['message'] ?? ''}',
+      );
+    }
+    throw StateError('native_error: invalid native response');
+  }
 }

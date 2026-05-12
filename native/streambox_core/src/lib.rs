@@ -1,4 +1,6 @@
+pub mod db;
 pub mod error;
+pub mod favorites;
 pub mod ffi;
 pub mod models;
 

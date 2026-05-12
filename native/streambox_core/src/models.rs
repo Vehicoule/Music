@@ -24,3 +24,27 @@ pub struct PlatformInfo {
 pub struct EchoPayload {
     pub echo: Value,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Favorite {
+    pub id: String,
+    pub item: Value,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FavoriteCreate {
+    pub item: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FavoriteDelete {
+    pub id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DatabaseRequest<T> {
+    pub database_path: Option<String>,
+    #[serde(flatten)]
+    pub payload: T,
+}
