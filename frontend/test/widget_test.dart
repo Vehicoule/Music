@@ -372,7 +372,7 @@ void main() {
     final prefetcher = ResolvePrefetcher(
       resolve: (track, {sourceUrl}) async {
         calls.add(track.title);
-        return ResolveResult(
+        return ResolveResponse(
           candidates: [
             SourceCandidate(
               adapter: 'yt_dlp',

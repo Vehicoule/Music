@@ -374,7 +374,7 @@ class _RecordingCoreClient implements CoreClient {
   Future<NativeCoreHealth> nativeHealth() => throw UnimplementedError();
 
   @override
-  Future<ResolveResult> resolve(
+  Future<ResolveResponse> resolve(
     TrackMetadata track, {
     List<String> adapters = const [],
     String? sourceUrl,

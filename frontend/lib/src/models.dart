@@ -559,14 +559,14 @@ class ArtistDetail {
   }
 }
 
-class ResolveResult {
-  const ResolveResult({required this.candidates, required this.warnings});
+class ResolveResponse {
+  const ResolveResponse({required this.candidates, required this.warnings});
 
   final List<SourceCandidate> candidates;
   final List<DiscoverWarning> warnings;
 
-  factory ResolveResult.fromJson(Map<String, dynamic> json) {
-    return ResolveResult(
+  factory ResolveResponse.fromJson(Map<String, dynamic> json) {
+    return ResolveResponse(
       candidates: (json['candidates'] as List<dynamic>? ?? [])
           .map((item) => SourceCandidate.fromJson(item as Map<String, dynamic>))
           .toList(),

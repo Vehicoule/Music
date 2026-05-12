@@ -9,7 +9,7 @@ abstract class CoreClient {
   Future<RuntimeDebug> runtimeDebug();
   Future<AlbumDetail> albumDetail(String browseId);
   Future<ArtistDetail> artistDetail(String browseId);
-  Future<ResolveResult> resolve(
+  Future<ResolveResponse> resolve(
     TrackMetadata track, {
     List<String> adapters = const [],
     String? sourceUrl,
@@ -99,7 +99,7 @@ class HybridCoreClient implements CoreClient {
   }
 
   @override
-  Future<ResolveResult> resolve(
+  Future<ResolveResponse> resolve(
     TrackMetadata track, {
     List<String> adapters = const [],
     String? sourceUrl,
