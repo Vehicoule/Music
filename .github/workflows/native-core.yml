@@ -1,0 +1,64 @@
+name: Native core
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  rust:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check Rust core formatting
+        run: cargo fmt --manifest-path native/streambox_core/Cargo.toml -- --check
+      - name: Test Rust core
+        run: cargo test --manifest-path native/streambox_core/Cargo.toml
+
+  flutter:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Install Flutter dependencies
+        working-directory: frontend
+        run: flutter pub get
+      - name: Analyze Flutter
+        working-directory: frontend
+        run: flutter analyze
+      - name: Test Flutter
+        working-directory: frontend
+        run: flutter test
+      - name: Build Windows Rust core
+        run: ./scripts/build-windows-core.ps1 -Configuration Debug
+      - name: Build Windows debug shell
+        working-directory: frontend
+        run: flutter build windows --debug
+
+  android-bridge:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Install Android NDK
+        run: sdkmanager "ndk;28.2.13676358"
+      - name: Install Flutter dependencies
+        working-directory: frontend
+        run: flutter pub get
+      - name: Build Android Rust core
+        run: ./scripts/build-android-core.ps1
+      - name: Build Android debug shell
+        working-directory: frontend
+        run: flutter build apk --debug

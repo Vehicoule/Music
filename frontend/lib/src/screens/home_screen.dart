@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../api_client.dart';
 import '../audio/player_controller.dart';
 import '../audio/resolve_prefetcher.dart';
+import '../core/core_client.dart';
 import '../models.dart';
 import '../theme.dart';
 import '../widgets/diagnostics_panel.dart';
@@ -18,11 +18,11 @@ import '../widgets/shell_scaffold.dart';
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
     super.key,
-    required this.apiClient,
+    required this.coreClient,
     required this.playerController,
   });
 
-  final ApiClient apiClient;
+  final CoreClient coreClient;
   final PlayerController playerController;
 
   @override
@@ -54,13 +54,15 @@ class _HomeScreenState extends State<HomeScreen> {
   AlbumDetail? albumDetail;
   ArtistDetail? artistDetail;
   bool detailLoading = false;
+  List<String> nativeDiagnostics = const [];
   int _searchToken = 0;
   late final ResolvePrefetcher resolvePrefetcher;
 
   @override
   void initState() {
     super.initState();
-    resolvePrefetcher = ResolvePrefetcher(resolve: widget.apiClient.resolve);
+    resolvePrefetcher = ResolvePrefetcher(resolve: widget.coreClient.resolve);
+    unawaited(_loadNativeCoreHealth());
     unawaited(_loadRuntimeDebug());
     unawaited(_loadLibrary());
     final audioRuntimeWarning = widget.playerController.checkAudioRuntime();
@@ -94,7 +96,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final token = ++_searchToken;
     try {
       final response =
-          await widget.apiClient.discover(query, scope: selectedScope);
+          await widget.coreClient.discover(query, scope: selectedScope);
       setState(() => results = response.items);
       unawaited(resolvePrefetcher.prefetchTop(response.items));
       if (response.mode == 'metadata') {
@@ -112,7 +114,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _loadPlayableMatch(String query, int token) async {
     setState(() => playableLoading = true);
     try {
-      final response = await widget.apiClient.discoverPlayable(query);
+      final response = await widget.coreClient.discoverPlayable(query);
       if (!mounted || token != _searchToken) {
         return;
       }
@@ -133,7 +135,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _loadRuntimeDebug() async {
     try {
-      final runtime = await widget.apiClient.runtimeDebug();
+      final runtime = await widget.coreClient.runtimeDebug();
       if (!mounted) {
         return;
       }
@@ -159,15 +161,25 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _loadNativeCoreHealth() async {
+    final health = await widget.coreClient.nativeHealth();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      nativeDiagnostics = [health.diagnosticLabel];
+    });
+  }
+
   Future<void> _loadLibrary() async {
     setState(() {
       libraryLoading = true;
       libraryError = null;
     });
     try {
-      final loadedPlaylists = await widget.apiClient.playlists();
-      final loadedFavorites = await widget.apiClient.favorites();
-      final loadedHistory = await widget.apiClient.history();
+      final loadedPlaylists = await widget.coreClient.playlists();
+      final loadedFavorites = await widget.coreClient.favorites();
+      final loadedHistory = await widget.coreClient.history();
       if (!mounted) {
         return;
       }
@@ -274,7 +286,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (current == null) {
       return;
     }
-    await widget.apiClient.favorite(current);
+    await widget.coreClient.favorite(current);
     await _loadLibrary();
   }
 
@@ -291,7 +303,7 @@ class _HomeScreenState extends State<HomeScreen> {
         artistDetail = null;
       });
       try {
-        final detail = await widget.apiClient.albumDetail(browseId);
+        final detail = await widget.coreClient.albumDetail(browseId);
         if (!mounted) {
           return;
         }
@@ -320,7 +332,7 @@ class _HomeScreenState extends State<HomeScreen> {
         artistDetail = null;
       });
       try {
-        final detail = await widget.apiClient.artistDetail(browseId);
+        final detail = await widget.coreClient.artistDetail(browseId);
         if (!mounted) {
           return;
         }
@@ -368,7 +380,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (queue.isEmpty) {
       return;
     }
-    await widget.apiClient.createPlaylist(
+    await widget.coreClient.createPlaylist(
       'Queue ${DateTime.now().toLocal().toIso8601String().substring(0, 16)}',
       queue,
     );
@@ -407,7 +419,10 @@ class _HomeScreenState extends State<HomeScreen> {
             current: controller.current,
             queue: controller.queue,
             playbackError: playbackError,
-            diagnostics: controller.playbackDiagnostics,
+            diagnostics: [
+              ...nativeDiagnostics,
+              ...controller.playbackDiagnostics,
+            ],
           ),
           playerDock: PlayerDock(
             current: controller.current,
@@ -495,7 +510,10 @@ class _HomeScreenState extends State<HomeScreen> {
       case LibrarySection.diagnostics:
         return FloatingPanel(
           child: DiagnosticsPanel(
-            diagnostics: widget.playerController.playbackDiagnostics,
+            diagnostics: [
+              ...nativeDiagnostics,
+              ...widget.playerController.playbackDiagnostics,
+            ],
           ),
         );
     }

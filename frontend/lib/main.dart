@@ -3,7 +3,9 @@ import 'package:media_kit/media_kit.dart';
 
 import 'src/api_client.dart';
 import 'src/audio/player_controller.dart';
+import 'src/core/core_client.dart';
 import 'src/desktop_window.dart';
+import 'src/native/native_core.dart';
 import 'src/screens/home_screen.dart';
 import 'src/theme.dart';
 
@@ -17,13 +19,18 @@ Future<void> main() async {
     defaultValue: 'http://127.0.0.1:8000',
   );
 
-  runApp(StreamboxApp(apiClient: ApiClient(baseUrl: apiBaseUrl)));
+  final coreClient = HybridCoreClient(
+    apiClient: ApiClient(baseUrl: apiBaseUrl),
+    nativeCore: FfiNativeCore(),
+  );
+
+  runApp(StreamboxApp(coreClient: coreClient));
 }
 
 class StreamboxApp extends StatefulWidget {
-  const StreamboxApp({super.key, required this.apiClient});
+  const StreamboxApp({super.key, required this.coreClient});
 
-  final ApiClient apiClient;
+  final CoreClient coreClient;
 
   @override
   State<StreamboxApp> createState() => _StreamboxAppState();
@@ -35,7 +42,7 @@ class _StreamboxAppState extends State<StreamboxApp> {
   @override
   void initState() {
     super.initState();
-    playerController = PlayerController(apiClient: widget.apiClient);
+    playerController = PlayerController(coreClient: widget.coreClient);
   }
 
   @override
@@ -51,7 +58,7 @@ class _StreamboxAppState extends State<StreamboxApp> {
       debugShowCheckedModeBanner: false,
       theme: StreamboxTheme.light(),
       home: HomeScreen(
-        apiClient: widget.apiClient,
+        coreClient: widget.coreClient,
         playerController: playerController,
       ),
     );

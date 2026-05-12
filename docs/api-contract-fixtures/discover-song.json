@@ -1,0 +1,25 @@
+{
+  "query": "bella gims",
+  "mode": "stream",
+  "scope": "songs",
+  "items": [
+    {
+      "id": "ytmusic:56BRFlaxsGw",
+      "mode": "stream",
+      "kind": "song",
+      "label": "YouTube Music",
+      "track": {
+        "id": "ytmusic:56BRFlaxsGw",
+        "title": "Bella",
+        "artists": [{ "name": "GIMS" }],
+        "length_ms": 225000,
+        "source_provider": "ytmusic",
+        "source_id": "56BRFlaxsGw",
+        "source_url": "https://music.youtube.com/watch?v=56BRFlaxsGw",
+        "source_kind": "song",
+        "artwork_url": "https://i.ytimg.com/vi/56BRFlaxsGw/hqdefault.jpg"
+      }
+    }
+  ],
+  "warnings": []
+}
