@@ -104,13 +104,30 @@ class HybridCoreClient implements CoreClient {
   }
 
   @override
-  Future<void> addHistory(PlaybackItem item) {
-    return rustCoreClient?.addHistory(item) ?? apiClient.addHistory(item);
+  Future<void> addHistory(PlaybackItem item) async {
+    final rust = rustCoreClient;
+    if (rust != null) {
+      try {
+        await rust.addHistory(item);
+        return;
+      } catch (_) {
+        // Fall through to the FastAPI client when native history is unavailable.
+      }
+    }
+    return apiClient.addHistory(item);
   }
 
   @override
-  Future<List<PlaybackItem>> history() {
-    return rustCoreClient?.history() ?? apiClient.history();
+  Future<List<PlaybackItem>> history() async {
+    final rust = rustCoreClient;
+    if (rust != null) {
+      try {
+        return await rust.history();
+      } catch (_) {
+        // Fall through to the FastAPI client when native history is unavailable.
+      }
+    }
+    return apiClient.history();
   }
 
   @override
