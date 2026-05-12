@@ -260,6 +260,327 @@ pub fn remove_favorite(path: impl AsRef<Path>, favorite_id: &str) -> Result<(), 
     Ok(())
 }
 
+pub fn upsert_source_index_entries(
+    path: impl AsRef<Path>,
+    entries: &[SourceIndexEntry],
+) -> Result<usize, CoreError> {
+    let mut connection = open_initialized(path.as_ref())?;
+    ensure_source_index_schema(&connection)?;
+    let transaction = connection.transaction().map_err(sql_error)?;
+    for entry in entries {
+        let id = source_index_id(entry);
+        let payload = serde_json::to_string(entry)
+            .map_err(|error| CoreError::new("source_index_encode_failed", error.to_string()))?;
+        transaction
+            .execute(
+                "INSERT OR REPLACE INTO source_index(
+                    id, source_provider, source_id, source_url, source_kind, title, artist, album,
+                    duration_seconds, confidence_score, rank_reason, artwork_url, raw_title,
+                    canonical_title, canonical_artist, parse_source, payload
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                params![
+                    id,
+                    entry.source_provider,
+                    entry.source_id,
+                    entry.source_url,
+                    entry.source_kind,
+                    entry.title,
+                    entry.artist,
+                    entry.album,
+                    entry.duration_seconds,
+                    entry.confidence_score,
+                    entry.rank_reason,
+                    entry.artwork_url,
+                    entry.raw_title,
+                    entry.canonical_title,
+                    entry.canonical_artist,
+                    entry.parse_source,
+                    payload,
+                ],
+            )
+            .map_err(sql_error)?;
+        transaction
+            .execute("DELETE FROM source_index_fts WHERE id = ?", params![id])
+            .map_err(sql_error)?;
+        transaction
+            .execute(
+                "INSERT INTO source_index_fts(
+                    id, title, artist, album, raw_title, canonical_title, canonical_artist
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                params![
+                    id,
+                    entry.title,
+                    entry.artist,
+                    entry.album,
+                    entry.raw_title,
+                    entry.canonical_title,
+                    entry.canonical_artist,
+                ],
+            )
+            .map_err(sql_error)?;
+    }
+    transaction.commit().map_err(sql_error)?;
+    Ok(entries.len())
+}
+
+pub fn search_source_index_entries(
+    path: impl AsRef<Path>,
+    query: &str,
+    limit: usize,
+    scope: Option<&str>,
+) -> Result<Vec<SourceIndexEntry>, CoreError> {
+    let connection = open_initialized(path.as_ref())?;
+    ensure_source_index_schema(&connection)?;
+    let mut statement = connection
+        .prepare("SELECT payload FROM source_index")
+        .map_err(sql_error)?;
+    let rows = statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(sql_error)?;
+    let mut scored = Vec::new();
+    for row in rows {
+        let payload = row.map_err(sql_error)?;
+        let mut entry: SourceIndexEntry = serde_json::from_str(&payload)
+            .map_err(|error| CoreError::new("source_index_decode_failed", error.to_string()))?;
+        if !scope_matches(scope, &entry.source_kind) {
+            continue;
+        }
+        let (score, reason) = rank_source_index_entry(query, &entry);
+        if score <= 0.0 {
+            continue;
+        }
+        entry.confidence_score = score;
+        entry.rank_reason = reason;
+        scored.push(entry);
+    }
+    scored.sort_by(|left, right| {
+        right
+            .confidence_score
+            .partial_cmp(&left.confidence_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| left.title.cmp(&right.title))
+    });
+    scored.truncate(limit);
+    Ok(scored)
+}
+
+pub fn clear_source_index(path: impl AsRef<Path>) -> Result<(), CoreError> {
+    let connection = open_initialized(path.as_ref())?;
+    ensure_source_index_schema(&connection)?;
+    connection
+        .execute("DELETE FROM source_index", [])
+        .map_err(sql_error)?;
+    connection
+        .execute("DELETE FROM source_index_fts", [])
+        .map_err(sql_error)?;
+    Ok(())
+}
+
+pub fn rebuild_source_index(path: impl AsRef<Path>) -> Result<SourceIndexSchemaStatus, CoreError> {
+    let connection = connect(path.as_ref())?;
+    let rebuilt = source_index_needs_rebuild(&connection)?;
+    if rebuilt {
+        connection
+            .execute_batch(
+                "DROP TABLE IF EXISTS source_index_fts;
+                 DROP TABLE IF EXISTS source_index;",
+            )
+            .map_err(sql_error)?;
+    }
+    ensure_metadata_cache_schema(&connection)?;
+    ensure_source_index_schema(&connection)?;
+    write_source_index_schema_version(&connection)?;
+    Ok(SourceIndexSchemaStatus {
+        schema_key: SOURCE_INDEX_SCHEMA_KEY.to_string(),
+        schema_version: SOURCE_INDEX_SCHEMA_VERSION.to_string(),
+        rebuilt,
+    })
+}
+
+fn source_index_id(entry: &SourceIndexEntry) -> String {
+    format!("{}:{}", entry.source_provider, entry.source_id)
+}
+
+fn scope_matches(scope: Option<&str>, source_kind: &str) -> bool {
+    match scope {
+        Some("songs") => source_kind == "song",
+        Some("videos") => source_kind == "video",
+        _ => true,
+    }
+}
+
+fn rank_source_index_entry(query: &str, entry: &SourceIndexEntry) -> (f64, String) {
+    let tokens = query_tokens(query);
+    if tokens.is_empty() {
+        return (0.0, "empty_query".to_string());
+    }
+    let title = normalize(&entry.title);
+    let canonical_title = normalize(&entry.canonical_title);
+    let raw_title = normalize(&entry.raw_title);
+    let artist = normalize(&entry.artist);
+    let canonical_artist = normalize(&entry.canonical_artist);
+    let album = normalize(&entry.album);
+    let haystack = [
+        title.as_str(),
+        canonical_title.as_str(),
+        raw_title.as_str(),
+        artist.as_str(),
+        canonical_artist.as_str(),
+        album.as_str(),
+    ]
+    .join(" ");
+    let matched = tokens
+        .iter()
+        .filter(|token| haystack.contains(token.as_str()))
+        .count();
+    if matched == 0 {
+        return (0.0, "no_match".to_string());
+    }
+    let mut score = (matched as f64 / tokens.len() as f64) * 70.0;
+    let mut reasons = Vec::new();
+    if !title.is_empty() && tokens.iter().any(|token| title.contains(token.as_str())) {
+        score += 10.0;
+        reasons.push("title");
+    }
+    if !canonical_title.is_empty()
+        && tokens
+            .iter()
+            .any(|token| canonical_title.contains(token.as_str()))
+    {
+        score += 10.0;
+        reasons.push("canonical_title");
+    }
+    if !artist.is_empty() && tokens.iter().any(|token| artist.contains(token.as_str())) {
+        score += 20.0;
+        reasons.push("artist");
+    }
+    if !canonical_artist.is_empty()
+        && tokens
+            .iter()
+            .any(|token| canonical_artist.contains(token.as_str()))
+    {
+        score += 20.0;
+        reasons.push("canonical_artist");
+    }
+    if entry.source_kind == "song" {
+        score += 2.0;
+    }
+    (score.min(100.0), reasons.join(","))
+}
+
+fn query_tokens(query: &str) -> Vec<String> {
+    normalize(query)
+        .split_whitespace()
+        .filter(|token| token.len() > 2 && *token != "the")
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn normalize(value: &str) -> String {
+    value
+        .to_ascii_lowercase()
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character
+            } else {
+                ' '
+            }
+        })
+        .collect::<String>()
+}
+
+fn ensure_source_index_schema(connection: &Connection) -> Result<(), CoreError> {
+    if source_index_needs_rebuild(connection)? {
+        connection
+            .execute_batch(
+                "DROP TABLE IF EXISTS source_index_fts;
+                 DROP TABLE IF EXISTS source_index;",
+            )
+            .map_err(sql_error)?;
+    }
+    connection
+        .execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS source_index (
+                id TEXT PRIMARY KEY,
+                source_provider TEXT NOT NULL,
+                source_id TEXT NOT NULL,
+                source_url TEXT NOT NULL,
+                source_kind TEXT NOT NULL DEFAULT '',
+                title TEXT NOT NULL DEFAULT '',
+                artist TEXT NOT NULL DEFAULT '',
+                album TEXT NOT NULL DEFAULT '',
+                duration_seconds REAL,
+                confidence_score REAL NOT NULL DEFAULT 0,
+                rank_reason TEXT NOT NULL DEFAULT '',
+                artwork_url TEXT NOT NULL DEFAULT '',
+                raw_title TEXT NOT NULL DEFAULT '',
+                canonical_title TEXT NOT NULL DEFAULT '',
+                canonical_artist TEXT NOT NULL DEFAULT '',
+                parse_source TEXT NOT NULL DEFAULT '',
+                payload TEXT NOT NULL
+            );
+
+            CREATE VIRTUAL TABLE IF NOT EXISTS source_index_fts
+            USING fts5(id UNINDEXED, title, artist, album, raw_title, canonical_title, canonical_artist);
+            "#,
+        )
+        .map_err(sql_error)
+}
+
+fn source_index_needs_rebuild(connection: &Connection) -> Result<bool, CoreError> {
+    let exists: Option<String> = connection
+        .query_row(
+            "SELECT name FROM sqlite_master WHERE name = 'source_index'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(sql_error)?;
+    if exists.is_none() {
+        return Ok(false);
+    }
+    let has_source_provider = connection
+        .prepare("PRAGMA table_info(source_index)")
+        .map_err(sql_error)?
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(sql_error)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(sql_error)?
+        .iter()
+        .any(|column| column == "source_provider");
+    Ok(!has_source_provider)
+}
+
+fn ensure_metadata_cache_schema(connection: &Connection) -> Result<(), CoreError> {
+    connection
+        .execute_batch(
+            "CREATE TABLE IF NOT EXISTS metadata_cache(
+                cache_key TEXT PRIMARY KEY,
+                payload TEXT NOT NULL,
+                created_at INTEGER NOT NULL DEFAULT 0,
+                updated_at INTEGER NOT NULL DEFAULT 0
+            );",
+        )
+        .map_err(sql_error)
+}
+
+fn write_source_index_schema_version(connection: &Connection) -> Result<(), CoreError> {
+    ensure_metadata_cache_schema(connection)?;
+    connection
+        .execute(
+            "INSERT OR REPLACE INTO metadata_cache(cache_key, payload, updated_at)
+             VALUES (?, ?, strftime('%s', 'now'))",
+            params![
+                SOURCE_INDEX_SCHEMA_KEY,
+                format!("\"{SOURCE_INDEX_SCHEMA_VERSION}\"")
+            ],
+        )
+        .map_err(sql_error)?;
+    Ok(())
+}
+
 fn open_initialized(path: &Path) -> Result<Connection, CoreError> {
     let mut connection = connect(path)?;
     init_schema(&mut connection)?;
@@ -306,6 +627,7 @@ fn init_schema(connection: &mut Connection) -> Result<(), CoreError> {
             2 => migrate_to_v2(&transaction)?,
             3 => migrate_to_v3(&transaction)?,
             4 => migrate_to_v4(&transaction)?,
+            5 => migrate_to_v5(&transaction)?,
             _ => {
                 return Err(CoreError::new(
                     "unsupported_schema_version",
@@ -370,7 +692,8 @@ fn migrate_to_v3(transaction: &rusqlite::Transaction<'_>) -> Result<(), CoreErro
             CREATE TABLE IF NOT EXISTS metadata_cache (
                 cache_key TEXT PRIMARY KEY,
                 payload TEXT NOT NULL,
-                created_at INTEGER NOT NULL
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL DEFAULT 0
             );
             "#,
         )
@@ -383,20 +706,39 @@ fn migrate_to_v4(transaction: &rusqlite::Transaction<'_>) -> Result<(), CoreErro
             r#"
             CREATE TABLE IF NOT EXISTS source_index (
                 id TEXT PRIMARY KEY,
+                source_provider TEXT NOT NULL,
+                source_id TEXT NOT NULL,
+                source_url TEXT NOT NULL,
+                source_kind TEXT NOT NULL DEFAULT '',
                 title TEXT NOT NULL DEFAULT '',
                 artist TEXT NOT NULL DEFAULT '',
                 album TEXT NOT NULL DEFAULT '',
+                duration_seconds REAL,
+                confidence_score REAL NOT NULL DEFAULT 0,
+                rank_reason TEXT NOT NULL DEFAULT '',
+                artwork_url TEXT NOT NULL DEFAULT '',
+                raw_title TEXT NOT NULL DEFAULT '',
+                canonical_title TEXT NOT NULL DEFAULT '',
+                canonical_artist TEXT NOT NULL DEFAULT '',
+                parse_source TEXT NOT NULL DEFAULT '',
                 payload TEXT NOT NULL
             );
+
+            CREATE VIRTUAL TABLE IF NOT EXISTS source_index_fts
+            USING fts5(id UNINDEXED, title, artist, album, raw_title, canonical_title, canonical_artist);
 
             CREATE INDEX IF NOT EXISTS idx_history_played_at
             ON history(played_at DESC);
 
-            INSERT OR REPLACE INTO metadata_cache(cache_key, payload, updated_at)
-            VALUES ('source-index:schema-version:v4', '"4"', strftime('%s', 'now'));
+            INSERT OR REPLACE INTO metadata_cache(cache_key, payload, created_at, updated_at)
+            VALUES ('source-index:schema-version:v4', '"4"', strftime('%s', 'now'), strftime('%s', 'now'));
             "#,
         )
         .map_err(sql_error)
+}
+
+fn migrate_to_v5(_transaction: &rusqlite::Transaction<'_>) -> Result<(), CoreError> {
+    Ok(())
 }
 
 fn load_playlist(connection: &Connection, playlist_id: &str) -> Result<Playlist, CoreError> {
