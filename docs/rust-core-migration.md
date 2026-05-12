@@ -41,7 +41,7 @@ through `RustCoreClient`'s `fallbackApiClient`:
 | `sources()` | `GET /api/sources` adapter capabilities | FastAPI-only |
 | `albumDetail(browseId)` | `GET /api/albums/{browse_id}` album metadata | FastAPI-only |
 | `artistDetail(browseId)` | `GET /api/artists/{browse_id}` artist metadata | FastAPI-only |
-| `runtimeDebug()` | `GET /api/debug/runtime` backend/runtime diagnostics | Mostly FastAPI-backed |
+| `runtimeDebug()` | `GET /api/debug/runtime` backend/runtime diagnostics | FastAPI-only |
 
 When a method changes migration status, update this table in the same change that
 switches Flutter routing so the fallback surface remains visible.
@@ -95,15 +95,18 @@ areas are stable:
 ### Feature Migration
 
 - [x] Define Rust-owned SQLite migrations for playlists, favorites, and history.
-- [ ] Playlists: Rust read/create/update/delete behavior is wired through
-      Flutter with FastAPI fallback; contract fixtures and explicit fallback
-      coverage still need to be preserved before removing FastAPI routes.
-- [ ] Favorites: Rust read/write/delete behavior is wired through Flutter with
-      FastAPI fallback; identity/de-duplication contract coverage and explicit
-      fallback tests still need to be completed.
-- [ ] History: Rust writes and bounded reads are wired through Flutter with
-      FastAPI fallback; retention/order contract coverage and explicit fallback
-      tests still need to be completed.
+- [x] Playlists: Rust read/create/update/delete behavior is implemented and
+      wired through Flutter with FastAPI fallback.
+- [ ] Playlists: close contract parity gaps, preserve fixtures, and add
+      migration-hardening/fallback coverage before removing FastAPI routes.
+- [x] Favorites: Rust read/write/delete behavior is implemented and wired
+      through Flutter with FastAPI fallback.
+- [ ] Favorites: close identity/de-duplication contract parity gaps and add
+      migration-hardening/fallback coverage before removing FastAPI routes.
+- [x] History: Rust writes and bounded reads are implemented and wired through
+      Flutter with FastAPI fallback.
+- [ ] History: close retention/order contract parity gaps and add
+      migration-hardening/fallback coverage before removing FastAPI routes.
 - [ ] Decide whether discovery/search stays network-backed, becomes plugin
       backed, or remains a FastAPI-only optional service.
 - [ ] Port source capability listing and source resolution or define the plugin
