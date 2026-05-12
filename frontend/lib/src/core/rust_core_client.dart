@@ -42,7 +42,7 @@ class RustCoreClient implements CoreClient {
   }
 
   @override
-  Future<ResolveResult> resolve(
+  Future<ResolveResponse> resolve(
     TrackMetadata track, {
     List<String> adapters = const [],
     String? sourceUrl,

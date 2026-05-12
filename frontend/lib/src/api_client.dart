@@ -50,7 +50,7 @@ class ApiClient {
     return ArtistDetail.fromJson(payload as Map<String, dynamic>);
   }
 
-  Future<ResolveResult> resolve(
+  Future<ResolveResponse> resolve(
     TrackMetadata track, {
     List<String> adapters = const [],
     String? sourceUrl,
@@ -63,7 +63,7 @@ class ApiClient {
         'source_url': sourceUrl,
       },
     );
-    return ResolveResult.fromJson(payload as Map<String, dynamic>);
+    return ResolveResponse.fromJson(payload as Map<String, dynamic>);
   }
 
   Future<List<AdapterCapability>> sources() async {
