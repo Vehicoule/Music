@@ -60,7 +60,7 @@ class RustCoreClient implements CoreClient {
   @override
   Future<List<Playlist>> playlists() async {
     final response = await nativeCore.playlistsListJson({});
-    final payload = _requireNativeData(response);
+    final payload = _unwrapJsonProtocol(response);
     return (payload as List<dynamic>)
         .map((item) => Playlist.fromJson(item as Map<String, dynamic>))
         .toList();
@@ -73,7 +73,7 @@ class RustCoreClient implements CoreClient {
       'tracks': tracks.map((item) => item.toJson()).toList(),
     });
     return Playlist.fromJson(
-      _requireNativeData(response) as Map<String, dynamic>,
+      _unwrapJsonProtocol(response) as Map<String, dynamic>,
     );
   }
 
@@ -92,19 +92,19 @@ class RustCoreClient implements CoreClient {
         'tracks': tracks.map((item) => item.toJson()).toList(),
     });
     return Playlist.fromJson(
-      _requireNativeData(response) as Map<String, dynamic>,
+      _unwrapJsonProtocol(response) as Map<String, dynamic>,
     );
   }
 
   @override
   Future<void> deletePlaylist(String id) async {
     final response = await nativeCore.playlistsDeleteJson({'id': id});
-    _requireNativeData(response);
+    _unwrapJsonProtocol(response);
   }
 
   @override
   Future<List<Favorite>> favorites() async {
-    final response = await nativeCore.favoritesListJson(databasePath);
+    final response = await nativeCore.favoritesListJson(dbPath);
     final data = _unwrapJsonProtocol(response) as List<dynamic>;
     return data
         .map((item) => Favorite.fromJson(item as Map<String, dynamic>))
@@ -114,7 +114,7 @@ class RustCoreClient implements CoreClient {
   @override
   Future<void> favorite(PlaybackItem item) async {
     final response = await nativeCore.favoritesAddJson(
-      databasePath,
+      dbPath,
       item.toJson(),
     );
     _unwrapJsonProtocol(response);
@@ -123,7 +123,7 @@ class RustCoreClient implements CoreClient {
   @override
   Future<void> unfavorite(String favoriteId) async {
     final response = await nativeCore.favoritesRemoveJson(
-      databasePath,
+      dbPath,
       favoriteId,
     );
     _unwrapJsonProtocol(response);

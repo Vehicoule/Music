@@ -40,6 +40,19 @@ abstract class NativeCore {
   Future<Map<String, dynamic>> historyListJson(Map<String, dynamic> input);
   Future<Map<String, dynamic>> historyAddJson(Map<String, dynamic> input);
   Future<Map<String, dynamic>> historyClearJson(Map<String, dynamic> input);
+  Future<Map<String, dynamic>> favoritesListJson(String? databasePath);
+  Future<Map<String, dynamic>> favoritesAddJson(
+    String? databasePath,
+    Map<String, dynamic> item,
+  );
+  Future<Map<String, dynamic>> favoritesRemoveJson(
+    String? databasePath,
+    String favoriteId,
+  );
+  Future<Map<String, dynamic>> playlistsListJson(Map<String, dynamic> input);
+  Future<Map<String, dynamic>> playlistsCreateJson(Map<String, dynamic> input);
+  Future<Map<String, dynamic>> playlistsUpdateJson(Map<String, dynamic> input);
+  Future<Map<String, dynamic>> playlistsDeleteJson(Map<String, dynamic> input);
 }
 
 class StaticNativeCore implements NativeCore {
@@ -76,6 +89,57 @@ class StaticNativeCore implements NativeCore {
   Future<Map<String, dynamic>> historyClearJson(
     Map<String, dynamic> input,
   ) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> favoritesListJson(String? databasePath) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> favoritesAddJson(
+    String? databasePath,
+    Map<String, dynamic> item,
+  ) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> favoritesRemoveJson(
+    String? databasePath,
+    String favoriteId,
+  ) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> playlistsListJson(Map<String, dynamic> input) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> playlistsCreateJson(
+    Map<String, dynamic> input,
+  ) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> playlistsUpdateJson(
+    Map<String, dynamic> input,
+  ) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> playlistsDeleteJson(
+    Map<String, dynamic> input,
+  ) async {
+    return _unsupported();
+  }
+
+  Map<String, dynamic> _unsupported() {
     return {'ok': false, 'error': {'code': 'unsupported'}};
   }
 }
@@ -160,7 +224,7 @@ class FfiNativeCore implements NativeCore {
   }
 
   @override
-  Future<Map<String, dynamic>> favoritesListJson(String databasePath) async {
+  Future<Map<String, dynamic>> favoritesListJson(String? databasePath) async {
     return _callJson(
       _openLibrary(),
       'streambox_favorites_list_json',
@@ -170,7 +234,7 @@ class FfiNativeCore implements NativeCore {
 
   @override
   Future<Map<String, dynamic>> favoritesAddJson(
-    String databasePath,
+    String? databasePath,
     Map<String, dynamic> item,
   ) async {
     return _callJson(
@@ -182,13 +246,55 @@ class FfiNativeCore implements NativeCore {
 
   @override
   Future<Map<String, dynamic>> favoritesRemoveJson(
-    String databasePath,
+    String? databasePath,
     String favoriteId,
   ) async {
     return _callJson(
       _openLibrary(),
       'streambox_favorites_remove_json',
       {'database_path': databasePath, 'id': favoriteId},
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> playlistsListJson(Map<String, dynamic> input) async {
+    return _callJson(
+      _openLibrary(),
+      'streambox_playlists_list_json',
+      input,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> playlistsCreateJson(
+    Map<String, dynamic> input,
+  ) async {
+    return _callJson(
+      _openLibrary(),
+      'streambox_playlists_create_json',
+      input,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> playlistsUpdateJson(
+    Map<String, dynamic> input,
+  ) async {
+    return _callJson(
+      _openLibrary(),
+      'streambox_playlists_update_json',
+      input,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> playlistsDeleteJson(
+    Map<String, dynamic> input,
+  ) async {
+    return _callJson(
+      _openLibrary(),
+      'streambox_playlists_delete_json',
+      input,
     );
   }
 
