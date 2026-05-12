@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -215,6 +216,167 @@ void main() {
     expect(favorites.single.id, 'api-favorite');
     expect(favorites.single.item.track.title, 'Test Song');
     expect(nativeCore.listCalls, 1);
+  });
+
+  test('rust core client parses playlist JSON shaped like FastAPI fixtures',
+      () async {
+    final listFixture = _fixtureResponse('playlists/list.json') as List<dynamic>;
+    final createFixture = _fixture('playlists/create.json');
+    final createResponse = createFixture['response'] as Map<String, dynamic>;
+    final createRequest = createFixture['request'] as Map<String, dynamic>;
+    final nativeCore = _ContractNativeCore(
+      playlistListResponse: {'ok': true, 'data': listFixture},
+      playlistCreateResponse: {'ok': true, 'data': createResponse},
+      playlistUpdateResponse: {
+        'ok': true,
+        'data': {...createResponse, 'name': 'Updated road trip'},
+      },
+      playlistDeleteResponse: {'ok': true, 'data': <String, dynamic>{}},
+    );
+    final rustClient = RustCoreClient(
+      nativeCore: nativeCore,
+      fallbackApiClient: ApiClient(baseUrl: 'http://127.0.0.1:8000'),
+      databasePath: '/tmp/streambox-contract.sqlite3',
+    );
+
+    final playlists = await rustClient.playlists();
+    expect(playlists.single.id, 'playlist-001');
+    expect(playlists.single.tracks.single.track.title, 'Fixture Song');
+    expect(nativeCore.playlistListInputs.single['database_path'],
+        '/tmp/streambox-contract.sqlite3');
+
+    final created = await rustClient.createPlaylist(
+      createRequest['name'] as String,
+      (createRequest['tracks'] as List<dynamic>)
+          .map((item) => PlaybackItem.fromJson(item as Map<String, dynamic>))
+          .toList(),
+    );
+    expect(created.name, 'Road trip');
+    expect(created.tracks.single.source?.headers['User-Agent'],
+        'StreamboxFixture/1.0');
+    expect(nativeCore.playlistCreateInputs.single['database_path'],
+        '/tmp/streambox-contract.sqlite3');
+    expect(nativeCore.playlistCreateInputs.single['description'], isNull);
+
+    final updated = await rustClient.updatePlaylist(
+      'playlist-001',
+      name: 'Updated road trip',
+      tracks: created.tracks,
+    );
+    expect(updated.name, 'Updated road trip');
+    expect(
+      nativeCore.playlistUpdateInputs.single['tracks'],
+      isA<List<dynamic>>(),
+    );
+
+    await rustClient.deletePlaylist('playlist-001');
+    expect(
+      nativeCore.playlistDeleteInputs.single,
+      containsPair('id', 'playlist-001'),
+    );
+  });
+
+  test('rust core client parses favorites JSON shaped like FastAPI fixtures',
+      () async {
+    final listFixture = _fixtureResponse('favorites/list.json') as List<dynamic>;
+    final addFixture = _fixture('favorites/add.json');
+    final favoriteItem = PlaybackItem.fromJson(
+      addFixture['request']['item'] as Map<String, dynamic>,
+    );
+    final nativeCore = _ContractNativeCore(
+      favoritesListResponse: {'ok': true, 'data': listFixture},
+      favoritesAddResponse: {'ok': true, 'data': addFixture['response']},
+      favoritesRemoveResponse: {'ok': true, 'data': <String, dynamic>{}},
+    );
+    final rustClient = RustCoreClient(
+      nativeCore: nativeCore,
+      fallbackApiClient: ApiClient(baseUrl: 'http://127.0.0.1:8000'),
+      databasePath: '/tmp/streambox-contract.sqlite3',
+    );
+
+    final favorites = await rustClient.favorites();
+    expect(favorites.single.id, 'favorite-001');
+    expect(favorites.single.item.track.album?.title, 'Fixture Album');
+    expect(nativeCore.favoritesListDatabasePaths.single,
+        '/tmp/streambox-contract.sqlite3');
+
+    await rustClient.favorite(favoriteItem);
+    expect(nativeCore.favoritesAddItems.single['track']['canonical_title'],
+        'Fixture Song');
+    expect(nativeCore.favoritesAddDatabasePaths.single,
+        '/tmp/streambox-contract.sqlite3');
+
+    await rustClient.unfavorite('favorite-001');
+    expect(nativeCore.favoritesRemoveIds.single, 'favorite-001');
+  });
+
+  test('rust core client parses history JSON shaped like FastAPI fixtures',
+      () async {
+    final listFixture = _fixtureResponse('history/list.json') as List<dynamic>;
+    final addFixture = _fixture('history/add.json');
+    final historyItem = PlaybackItem.fromJson(
+      addFixture['request']['item'] as Map<String, dynamic>,
+    );
+    final nativeCore = _ContractNativeCore(
+      historyListResponse: {'ok': true, 'data': listFixture},
+      historyAddResponse: {'ok': true, 'data': addFixture['response']},
+    );
+    final rustClient = RustCoreClient(
+      nativeCore: nativeCore,
+      fallbackApiClient: ApiClient(baseUrl: 'http://127.0.0.1:8000'),
+      databasePath: '/tmp/streambox-contract.sqlite3',
+    );
+
+    await rustClient.addHistory(historyItem);
+    expect(nativeCore.historyAddInputs.single['db_path'],
+        '/tmp/streambox-contract.sqlite3');
+    expect(nativeCore.historyAddInputs.single['item']['track']['source_provider'],
+        'ytmusic');
+
+    final history = await rustClient.history();
+    expect(history.single.id, 'playback-001');
+    expect(history.single.track.canonicalArtist, 'Fixture Artist');
+    expect(nativeCore.historyListInputs.single['db_path'],
+        '/tmp/streambox-contract.sqlite3');
+  });
+
+  test('hybrid core client falls back to FastAPI when Rust returns ok false',
+      () async {
+    final nativeCore = _ContractNativeCore(
+      playlistListResponse: {
+        'ok': false,
+        'error': {'code': 'database_error', 'message': 'locked'},
+      },
+    );
+    var apiCalls = 0;
+    final apiClient = ApiClient(
+      baseUrl: 'http://127.0.0.1:8000',
+      httpClient: MockClient((request) async {
+        apiCalls += 1;
+        expect(request.url.path, '/api/playlists');
+        return http.Response(
+          jsonEncode(_fixtureResponse('playlists/list.json')),
+          200,
+        );
+      }),
+    );
+    final coreClient = HybridCoreClient(
+      apiClient: apiClient,
+      nativeCore: nativeCore,
+      rustCoreClient: RustCoreClient(
+        nativeCore: nativeCore,
+        fallbackApiClient: apiClient,
+        databasePath: '/tmp/streambox-contract.sqlite3',
+      ),
+      routingConfig: const CoreClientRoutingConfig(useRustLocalLibrary: true),
+    );
+
+    final playlists = await coreClient.playlists();
+
+    expect(playlists.single.id, 'playlist-001');
+    expect(apiCalls, 1);
+    expect(nativeCore.playlistListInputs.single['database_path'],
+        '/tmp/streambox-contract.sqlite3');
   });
 
   test('native core ffi reports unavailable when the library cannot be loaded',
@@ -885,5 +1047,170 @@ class _FavoritesNativeCore implements NativeCore {
 
   Map<String, dynamic> _unsupported() {
     return {'ok': false, 'error': {'code': 'unsupported'}};
+  }
+}
+
+Map<String, dynamic> _fixture(String relativePath) {
+  final candidates = [
+    File('docs/api-contract-fixtures/$relativePath'),
+    File('../docs/api-contract-fixtures/$relativePath'),
+  ];
+  final file = candidates.firstWhere((candidate) => candidate.existsSync());
+  return jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
+}
+
+dynamic _fixtureResponse(String relativePath) {
+  return _fixture(relativePath)['response'];
+}
+
+class _ContractNativeCore implements NativeCore {
+  _ContractNativeCore({
+    Map<String, dynamic>? playlistListResponse,
+    Map<String, dynamic>? playlistCreateResponse,
+    Map<String, dynamic>? playlistUpdateResponse,
+    Map<String, dynamic>? playlistDeleteResponse,
+    Map<String, dynamic>? favoritesListResponse,
+    Map<String, dynamic>? favoritesAddResponse,
+    Map<String, dynamic>? favoritesRemoveResponse,
+    Map<String, dynamic>? historyListResponse,
+    Map<String, dynamic>? historyAddResponse,
+    Map<String, dynamic>? historyClearResponse,
+  })  : playlistListResponse = playlistListResponse ?? _unsupportedResponse,
+        playlistCreateResponse = playlistCreateResponse ?? _unsupportedResponse,
+        playlistUpdateResponse = playlistUpdateResponse ?? _unsupportedResponse,
+        playlistDeleteResponse = playlistDeleteResponse ?? _unsupportedResponse,
+        favoritesListResponse = favoritesListResponse ?? _unsupportedResponse,
+        favoritesAddResponse = favoritesAddResponse ?? _unsupportedResponse,
+        favoritesRemoveResponse = favoritesRemoveResponse ?? _unsupportedResponse,
+        historyListResponse = historyListResponse ?? _unsupportedResponse,
+        historyAddResponse = historyAddResponse ?? _unsupportedResponse,
+        historyClearResponse = historyClearResponse ?? _unsupportedResponse;
+
+  static final Map<String, dynamic> _unsupportedResponse = <String, dynamic>{
+    'ok': false,
+    'error': {'code': 'unsupported', 'message': 'unsupported test call'},
+  };
+
+  final Map<String, dynamic> playlistListResponse;
+  final Map<String, dynamic> playlistCreateResponse;
+  final Map<String, dynamic> playlistUpdateResponse;
+  final Map<String, dynamic> playlistDeleteResponse;
+  final Map<String, dynamic> favoritesListResponse;
+  final Map<String, dynamic> favoritesAddResponse;
+  final Map<String, dynamic> favoritesRemoveResponse;
+  final Map<String, dynamic> historyListResponse;
+  final Map<String, dynamic> historyAddResponse;
+  final Map<String, dynamic> historyClearResponse;
+
+  final playlistListInputs = <Map<String, dynamic>>[];
+  final playlistCreateInputs = <Map<String, dynamic>>[];
+  final playlistUpdateInputs = <Map<String, dynamic>>[];
+  final playlistDeleteInputs = <Map<String, dynamic>>[];
+  final favoritesListDatabasePaths = <String?>[];
+  final favoritesAddDatabasePaths = <String?>[];
+  final favoritesAddItems = <Map<String, dynamic>>[];
+  final favoritesRemoveDatabasePaths = <String?>[];
+  final favoritesRemoveIds = <String>[];
+  final historyListInputs = <Map<String, dynamic>>[];
+  final historyAddInputs = <Map<String, dynamic>>[];
+  final historyClearInputs = <Map<String, dynamic>>[];
+
+  @override
+  Future<Map<String, dynamic>> echoJson(Map<String, dynamic> input) async {
+    return {
+      'ok': true,
+      'data': {'echo': input},
+    };
+  }
+
+  @override
+  Future<Map<String, dynamic>> playlistsListJson(
+    Map<String, dynamic> input,
+  ) async {
+    playlistListInputs.add(input);
+    return playlistListResponse;
+  }
+
+  @override
+  Future<Map<String, dynamic>> playlistsCreateJson(
+    Map<String, dynamic> input,
+  ) async {
+    playlistCreateInputs.add(input);
+    return playlistCreateResponse;
+  }
+
+  @override
+  Future<Map<String, dynamic>> playlistsUpdateJson(
+    Map<String, dynamic> input,
+  ) async {
+    playlistUpdateInputs.add(input);
+    return playlistUpdateResponse;
+  }
+
+  @override
+  Future<Map<String, dynamic>> playlistsDeleteJson(
+    Map<String, dynamic> input,
+  ) async {
+    playlistDeleteInputs.add(input);
+    return playlistDeleteResponse;
+  }
+
+  @override
+  Future<Map<String, dynamic>> favoritesListJson(String? databasePath) async {
+    favoritesListDatabasePaths.add(databasePath);
+    return favoritesListResponse;
+  }
+
+  @override
+  Future<Map<String, dynamic>> favoritesAddJson(
+    String? databasePath,
+    Map<String, dynamic> item,
+  ) async {
+    favoritesAddDatabasePaths.add(databasePath);
+    favoritesAddItems.add(item);
+    return favoritesAddResponse;
+  }
+
+  @override
+  Future<Map<String, dynamic>> favoritesRemoveJson(
+    String? databasePath,
+    String favoriteId,
+  ) async {
+    favoritesRemoveDatabasePaths.add(databasePath);
+    favoritesRemoveIds.add(favoriteId);
+    return favoritesRemoveResponse;
+  }
+
+  @override
+  Future<Map<String, dynamic>> historyListJson(
+    Map<String, dynamic> input,
+  ) async {
+    historyListInputs.add(input);
+    return historyListResponse;
+  }
+
+  @override
+  Future<Map<String, dynamic>> historyAddJson(
+    Map<String, dynamic> input,
+  ) async {
+    historyAddInputs.add(input);
+    return historyAddResponse;
+  }
+
+  @override
+  Future<Map<String, dynamic>> historyClearJson(
+    Map<String, dynamic> input,
+  ) async {
+    historyClearInputs.add(input);
+    return historyClearResponse;
+  }
+
+  @override
+  Future<NativeCoreHealth> health() async {
+    return const NativeCoreHealth(
+      available: true,
+      version: 'streambox-core 0.1.0',
+      platform: 'test-platform',
+    );
   }
 }
