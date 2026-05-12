@@ -13,6 +13,10 @@ frontend/.dart_tool/
 frontend/.flutter-plugins
 frontend/.flutter-plugins-dependencies
 frontend/build/
+frontend/android/app/src/main/jniLibs/
+
+# Rust
+native/streambox_core/target/
 
 # Editor / OS
 .DS_Store

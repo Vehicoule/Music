@@ -4,11 +4,11 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart';
 
-import '../api_client.dart';
+import '../core/core_client.dart';
 import '../models.dart';
 
 class PlayerController extends ChangeNotifier {
-  PlayerController({required this.apiClient}) {
+  PlayerController({required this.coreClient}) {
     _subscriptions.add(player.stream.playing.listen((value) {
       playing = value;
       notifyListeners();
@@ -37,7 +37,7 @@ class PlayerController extends ChangeNotifier {
     }));
   }
 
-  final ApiClient apiClient;
+  final CoreClient coreClient;
   final Player player = Player();
   final List<StreamSubscription<dynamic>> _subscriptions = [];
 
@@ -57,7 +57,7 @@ class PlayerController extends ChangeNotifier {
     resolving = true;
     notifyListeners();
     try {
-      final result = await apiClient.resolve(track, sourceUrl: sourceUrl);
+      final result = await coreClient.resolve(track, sourceUrl: sourceUrl);
       if (result.candidates.isEmpty) {
         final detail = result.warningMessage;
         throw PlayerException(
@@ -89,7 +89,7 @@ class PlayerController extends ChangeNotifier {
         queue = [item, ...queue];
       }
       error = null;
-      unawaited(apiClient.addHistory(item));
+      unawaited(coreClient.addHistory(item));
       notifyListeners();
     } catch (exception, stackTrace) {
       final message = friendlyPlaybackError(exception);
@@ -176,7 +176,7 @@ class PlayerController extends ChangeNotifier {
     resolving = true;
     notifyListeners();
     try {
-      final result = await apiClient.resolve(track, sourceUrl: sourceUrl);
+      final result = await coreClient.resolve(track, sourceUrl: sourceUrl);
       if (result.candidates.isEmpty) {
         final detail = result.warningMessage;
         throw PlayerException(
