@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:streambox/src/api_client.dart';
 import 'package:streambox/src/core/core_client.dart';
+import 'package:streambox/src/core/rust_core_client.dart';
 import 'package:streambox/src/native/native_core.dart';
 
 void main() {
@@ -52,6 +53,24 @@ void main() {
     expect(result.available, isTrue);
     expect(result.version, 'streambox-core 0.1.0');
     expect(result.platform, 'test-platform');
+  });
+
+  test('rust core client exposes native echo json protocol', () async {
+    final rustClient = RustCoreClient(
+      fallbackApiClient: ApiClient(baseUrl: 'http://127.0.0.1:8000'),
+      nativeCore: const StaticNativeCore(
+        NativeCoreHealth(
+          available: true,
+          version: 'streambox-core 0.1.0',
+          platform: 'test-platform',
+        ),
+      ),
+    );
+
+    final result = await rustClient.echoJson({'message': 'bonjour'});
+
+    expect(result['ok'], isTrue);
+    expect(result['data']['echo']['message'], 'bonjour');
   });
 
   test('native core ffi reports unavailable when the library cannot be loaded',

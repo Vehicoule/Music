@@ -10,6 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_acrylic: ^1.1.4
+  ffi: ^2.1.3
   http: ^1.2.2
   media_kit: ^1.2.0
   media_kit_libs_audio: ^1.0.5
