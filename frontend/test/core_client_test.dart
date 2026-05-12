@@ -142,6 +142,45 @@ void main() {
     expect(result['data']['echo']['message'], 'bonjour');
   });
 
+  test('rust source-index cache hits require backend resolution', () async {
+    final rustClient = RustCoreClient(
+      fallbackApiClient: ApiClient(
+        baseUrl: 'http://127.0.0.1:8000',
+        httpClient: MockClient((request) async {
+          fail('FastAPI should not be called for a high-confidence cache hit');
+        }),
+      ),
+      nativeCore: _SourceIndexNativeCore({
+        'ok': true,
+        'data': [
+          {
+            'source_provider': 'youtube',
+            'source_id': 'abc123',
+            'source_url': 'https://music.youtube.com/watch?v=abc123',
+            'source_kind': 'song',
+            'title': 'Cached Song',
+            'artist': 'Cached Artist',
+            'album': 'Cached Album',
+            'duration_seconds': 180,
+            'confidence_score': 95,
+            'rank_reason': 'exact',
+            'raw_title': 'Cached Song - Cached Artist',
+            'canonical_title': 'Cached Song',
+            'canonical_artist': 'Cached Artist',
+            'parse_source': 'structured',
+          },
+        ],
+      }),
+    );
+
+    final response = await rustClient.discover('cached song', scope: 'songs');
+    final item = response.items.single;
+
+    expect(item.track?.title, 'Cached Song');
+    expect(item.track?.sourceUrl, 'https://music.youtube.com/watch?v=abc123');
+    expect(item.source, isNull);
+  });
+
   test(
     'hybrid core client returns favorites from Rust when native call succeeds',
     () async {
@@ -951,6 +990,20 @@ PlaybackItem _samplePlaybackItem() {
   );
 }
 
+class _SourceIndexNativeCore extends StaticNativeCore {
+  const _SourceIndexNativeCore(this.searchResponse)
+      : super(const NativeCoreHealth(available: true, platform: 'test'));
+
+  final Map<String, dynamic> searchResponse;
+
+  @override
+  Future<Map<String, dynamic>> sourceIndexSearchJson(
+    Map<String, dynamic> input,
+  ) async {
+    return searchResponse;
+  }
+}
+
 class _FavoritesNativeCore implements NativeCore {
   _FavoritesNativeCore({required this.listResponse});
 
@@ -1042,6 +1095,26 @@ class _FavoritesNativeCore implements NativeCore {
   Future<Map<String, dynamic>> playlistsUpdateJson(
     Map<String, dynamic> input,
   ) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> sourceIndexSearchJson(Map<String, dynamic> input) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> sourceIndexUpsertJson(Map<String, dynamic> input) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> sourceIndexClearJson(Map<String, dynamic> input) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> sourceIndexRebuildJson(Map<String, dynamic> input) async {
     return _unsupported();
   }
 

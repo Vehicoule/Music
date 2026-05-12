@@ -136,6 +136,10 @@ abstract class NativeCore {
   Future<Map<String, dynamic>> playlistsCreateJson(Map<String, dynamic> input);
   Future<Map<String, dynamic>> playlistsUpdateJson(Map<String, dynamic> input);
   Future<Map<String, dynamic>> playlistsDeleteJson(Map<String, dynamic> input);
+  Future<Map<String, dynamic>> sourceIndexSearchJson(Map<String, dynamic> input);
+  Future<Map<String, dynamic>> sourceIndexUpsertJson(Map<String, dynamic> input);
+  Future<Map<String, dynamic>> sourceIndexClearJson(Map<String, dynamic> input);
+  Future<Map<String, dynamic>> sourceIndexRebuildJson(Map<String, dynamic> input);
 }
 
 class StaticNativeCore implements NativeCore {
@@ -224,6 +228,26 @@ class StaticNativeCore implements NativeCore {
   Future<Map<String, dynamic>> playlistsDeleteJson(
     Map<String, dynamic> input,
   ) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> sourceIndexSearchJson(Map<String, dynamic> input) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> sourceIndexUpsertJson(Map<String, dynamic> input) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> sourceIndexClearJson(Map<String, dynamic> input) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> sourceIndexRebuildJson(Map<String, dynamic> input) async {
     return _unsupported();
   }
 
@@ -391,6 +415,42 @@ class FfiNativeCore implements NativeCore {
     return _callJson(
       _openLibrary(),
       'streambox_playlists_delete_json',
+      input,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> sourceIndexSearchJson(Map<String, dynamic> input) async {
+    return _callJson(
+      _openLibrary(),
+      'streambox_source_index_search_json',
+      input,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> sourceIndexUpsertJson(Map<String, dynamic> input) async {
+    return _callJson(
+      _openLibrary(),
+      'streambox_source_index_upsert_json',
+      input,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> sourceIndexClearJson(Map<String, dynamic> input) async {
+    return _callJson(
+      _openLibrary(),
+      'streambox_source_index_clear_json',
+      input,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> sourceIndexRebuildJson(Map<String, dynamic> input) async {
+    return _callJson(
+      _openLibrary(),
+      'streambox_source_index_rebuild_json',
       input,
     );
   }

@@ -6,9 +6,14 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
 
 use crate::error::CoreError;
-use crate::models::{DbHealth, Favorite, PlaybackItem, Playlist, PlaylistCreate, PlaylistUpdate};
+use crate::models::{
+    DbHealth, Favorite, PlaybackItem, Playlist, PlaylistCreate, PlaylistUpdate, SourceIndexEntry,
+    SourceIndexSchemaStatus,
+};
 
-pub const SCHEMA_VERSION: i64 = 4;
+pub const SCHEMA_VERSION: i64 = 5;
+pub const SOURCE_INDEX_SCHEMA_KEY: &str = "source-index:schema-version:v4";
+pub const SOURCE_INDEX_SCHEMA_VERSION: &str = "4";
 
 static ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -365,7 +370,7 @@ fn migrate_to_v3(transaction: &rusqlite::Transaction<'_>) -> Result<(), CoreErro
             CREATE TABLE IF NOT EXISTS metadata_cache (
                 cache_key TEXT PRIMARY KEY,
                 payload TEXT NOT NULL,
-                updated_at INTEGER NOT NULL
+                created_at INTEGER NOT NULL
             );
             "#,
         )
@@ -384,13 +389,8 @@ fn migrate_to_v4(transaction: &rusqlite::Transaction<'_>) -> Result<(), CoreErro
                 payload TEXT NOT NULL
             );
 
-            CREATE VIRTUAL TABLE IF NOT EXISTS source_index_fts USING fts5(
-                title,
-                artist,
-                album,
-                content='source_index',
-                content_rowid='rowid'
-            );
+            CREATE INDEX IF NOT EXISTS idx_history_played_at
+            ON history(played_at DESC);
 
             INSERT OR REPLACE INTO metadata_cache(cache_key, payload, updated_at)
             VALUES ('source-index:schema-version:v4', '"4"', strftime('%s', 'now'));

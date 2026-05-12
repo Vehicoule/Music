@@ -4,11 +4,15 @@ use std::os::raw::c_char;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::db::db_health;
+use crate::db::{
+    clear_source_index, db_health, default_database_path, rebuild_source_index,
+    search_source_index_entries, upsert_source_index_entries,
+};
 use crate::error::CoreError;
 use crate::models::{
     EchoPayload, FavoriteAddRequest, FavoriteListRequest, FavoriteRemoveRequest, HistoryAddRequest,
-    HistoryClearRequest, HistoryListRequest,
+    HistoryClearRequest, HistoryListRequest, SourceIndexClearRequest, SourceIndexRebuildRequest,
+    SourceIndexSearchRequest, SourceIndexUpsertRequest,
 };
 use crate::{favorites, health_json, history, platform_info, playlists, version};
 
@@ -157,6 +161,87 @@ pub unsafe extern "C" fn streambox_history_clear_json(input_json: *const c_char)
             Ok(()) => ok_json(json!({})),
             Err(error) => error_json(error),
         },
+        Err(error) => error_json(error),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn streambox_source_index_search_json(
+    input_json: *const c_char,
+) -> *mut c_char {
+    match read_json_as::<SourceIndexSearchRequest>(input_json) {
+        Ok(request) => {
+            let path = request
+                .database_path
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(default_database_path);
+            match search_source_index_entries(
+                path,
+                &request.query,
+                request.limit.unwrap_or(15),
+                request.scope.as_deref(),
+            ) {
+                Ok(entries) => ok_json(entries),
+                Err(error) => error_json(error),
+            }
+        }
+        Err(error) => error_json(error),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn streambox_source_index_upsert_json(
+    input_json: *const c_char,
+) -> *mut c_char {
+    match read_json_as::<SourceIndexUpsertRequest>(input_json) {
+        Ok(request) => {
+            let path = request
+                .database_path
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(default_database_path);
+            match upsert_source_index_entries(path, &request.entries) {
+                Ok(count) => ok_json(json!({ "upserted": count })),
+                Err(error) => error_json(error),
+            }
+        }
+        Err(error) => error_json(error),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn streambox_source_index_clear_json(
+    input_json: *const c_char,
+) -> *mut c_char {
+    match read_json_as::<SourceIndexClearRequest>(input_json) {
+        Ok(request) => {
+            let path = request
+                .database_path
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(default_database_path);
+            match clear_source_index(path) {
+                Ok(()) => ok_json(json!({})),
+                Err(error) => error_json(error),
+            }
+        }
+        Err(error) => error_json(error),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn streambox_source_index_rebuild_json(
+    input_json: *const c_char,
+) -> *mut c_char {
+    match read_json_as::<SourceIndexRebuildRequest>(input_json) {
+        Ok(request) => {
+            let path = request
+                .database_path
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(default_database_path);
+            match rebuild_source_index(path) {
+                Ok(status) => ok_json(status),
+                Err(error) => error_json(error),
+            }
+        }
         Err(error) => error_json(error),
     }
 }
