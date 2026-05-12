@@ -15,6 +15,8 @@ class RustCoreClient implements CoreClient {
   final ApiClient fallbackApiClient;
   final String? dbPath;
 
+  String get databasePath => dbPath ?? defaultRustDatabasePath;
+
   Future<Map<String, dynamic>> echoJson(Map<String, dynamic> input) {
     return nativeCore.echoJson(input);
   }
@@ -156,6 +158,17 @@ class RustCoreClient implements CoreClient {
 
   @override
   Future<NativeCoreHealth> nativeHealth() => nativeCore.health();
+
+  @override
+  Future<NativeDbHealth> nativeDbHealth() async {
+    try {
+      return NativeDbHealth.fromProtocol(
+        await nativeCore.dbHealthJson(databasePath),
+      );
+    } catch (error) {
+      return NativeDbHealth.unavailable(error);
+    }
+  }
 
   dynamic _unwrapJsonProtocol(Map<String, dynamic> response) {
     if (response['ok'] == true) {

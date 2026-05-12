@@ -163,11 +163,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _loadNativeCoreHealth() async {
     final health = await widget.coreClient.nativeHealth();
+    final dbHealth = await widget.coreClient.nativeDbHealth();
     if (!mounted) {
       return;
     }
     setState(() {
-      nativeDiagnostics = [health.diagnosticLabel];
+      nativeDiagnostics = [
+        health.diagnosticLabel,
+        'Rust platform: ${health.platform ?? 'unknown'}',
+        ...dbHealth.diagnosticLabels,
+      ];
     });
   }
 
