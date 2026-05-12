@@ -23,11 +23,9 @@ class RustCoreClient implements CoreClient {
 
   @override
   Future<DiscoverResponse> discover(String query, {String scope = 'all'}) async {
-    if (scope == 'songs' || scope == 'videos') {
-      final cached = await _discoverFromSourceIndex(query, scope: scope);
-      if (cached != null) {
-        return cached;
-      }
+    final cached = await _discoverFromSourceIndex(query, scope: scope);
+    if (cached != null) {
+      return cached;
     }
     final response = await fallbackApiClient.discover(query, scope: scope);
     await _cacheSourceIndexItems(response.items);
