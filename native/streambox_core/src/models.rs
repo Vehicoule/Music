@@ -26,25 +26,18 @@ pub struct EchoPayload {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Favorite {
-    pub id: String,
-    pub item: Value,
-    pub created_at: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FavoriteCreate {
+pub struct HistoryAddRequest {
+    pub db_path: Option<String>,
     pub item: Value,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FavoriteDelete {
-    pub id: String,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HistoryListRequest {
+    pub db_path: Option<String>,
+    pub limit: Option<usize>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DatabaseRequest<T> {
-    pub database_path: Option<String>,
-    #[serde(flatten)]
-    pub payload: T,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HistoryClearRequest {
+    pub db_path: Option<String>,
 }

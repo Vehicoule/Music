@@ -7,12 +7,12 @@ class RustCoreClient implements CoreClient {
   const RustCoreClient({
     required this.nativeCore,
     required this.fallbackApiClient,
-    this.databasePath = 'data/streambox.sqlite3',
+    this.dbPath,
   });
 
   final NativeCore nativeCore;
   final ApiClient fallbackApiClient;
-  final String databasePath;
+  final String? dbPath;
 
   Future<Map<String, dynamic>> echoJson(Map<String, dynamic> input) {
     return nativeCore.echoJson(input);
@@ -58,11 +58,48 @@ class RustCoreClient implements CoreClient {
   Future<List<AdapterCapability>> sources() => fallbackApiClient.sources();
 
   @override
-  Future<List<Playlist>> playlists() => fallbackApiClient.playlists();
+  Future<List<Playlist>> playlists() async {
+    final response = await nativeCore.playlistsListJson({});
+    final payload = _requireNativeData(response);
+    return (payload as List<dynamic>)
+        .map((item) => Playlist.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
 
   @override
-  Future<Playlist> createPlaylist(String name, List<PlaybackItem> tracks) {
-    return fallbackApiClient.createPlaylist(name, tracks);
+  Future<Playlist> createPlaylist(String name, List<PlaybackItem> tracks) async {
+    final response = await nativeCore.playlistsCreateJson({
+      'name': name,
+      'tracks': tracks.map((item) => item.toJson()).toList(),
+    });
+    return Playlist.fromJson(
+      _requireNativeData(response) as Map<String, dynamic>,
+    );
+  }
+
+  @override
+  Future<Playlist> updatePlaylist(
+    String id, {
+    String? name,
+    String? description,
+    List<PlaybackItem>? tracks,
+  }) async {
+    final response = await nativeCore.playlistsUpdateJson({
+      'id': id,
+      if (name != null) 'name': name,
+      if (description != null) 'description': description,
+      if (tracks != null)
+        'tracks': tracks.map((item) => item.toJson()).toList(),
+    });
+    return Playlist.fromJson(
+      _requireNativeData(response) as Map<String, dynamic>,
+    );
+  }
+
+  @override
+  Future<void> deletePlaylist(String id) async {
+    final response = await nativeCore.playlistsDeleteJson({'id': id});
+    _requireNativeData(response);
   }
 
   @override
@@ -93,12 +130,28 @@ class RustCoreClient implements CoreClient {
   }
 
   @override
-  Future<void> addHistory(PlaybackItem item) {
-    return fallbackApiClient.addHistory(item);
+  Future<void> addHistory(PlaybackItem item) async {
+    await _requireOk(await nativeCore.historyAddJson({
+      'db_path': dbPath,
+      'item': item.toJson(),
+    }));
   }
 
   @override
-  Future<List<PlaybackItem>> history() => fallbackApiClient.history();
+  Future<List<PlaybackItem>> history() async {
+    final response = await _requireOk(await nativeCore.historyListJson({
+      'db_path': dbPath,
+    }));
+    return (response['data'] as List<dynamic>? ?? [])
+        .map((item) => PlaybackItem.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> clearHistory() async {
+    await _requireOk(await nativeCore.historyClearJson({
+      'db_path': dbPath,
+    }));
+  }
 
   @override
   Future<NativeCoreHealth> nativeHealth() => nativeCore.health();
@@ -115,4 +168,26 @@ class RustCoreClient implements CoreClient {
     }
     throw StateError('native_error: invalid native response');
   }
+}
+
+class RustCoreException implements Exception {
+  const RustCoreException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'RustCoreException: $message';
+}
+
+Map<String, dynamic> _requireOk(Map<String, dynamic> response) {
+  if (response['ok'] == true) {
+    return response;
+  }
+  final error = response['error'];
+  if (error is Map<String, dynamic>) {
+    throw RustCoreException(
+      '${error['code'] ?? 'unknown'}: ${error['message'] ?? 'Rust core request failed'}',
+    );
+  }
+  throw const RustCoreException('Rust core request failed');
 }

@@ -37,15 +37,9 @@ class NativeCoreHealth {
 abstract class NativeCore {
   Future<NativeCoreHealth> health();
   Future<Map<String, dynamic>> echoJson(Map<String, dynamic> input);
-  Future<Map<String, dynamic>> favoritesListJson(String databasePath);
-  Future<Map<String, dynamic>> favoritesAddJson(
-    String databasePath,
-    Map<String, dynamic> item,
-  );
-  Future<Map<String, dynamic>> favoritesRemoveJson(
-    String databasePath,
-    String favoriteId,
-  );
+  Future<Map<String, dynamic>> historyListJson(Map<String, dynamic> input);
+  Future<Map<String, dynamic>> historyAddJson(Map<String, dynamic> input);
+  Future<Map<String, dynamic>> historyClearJson(Map<String, dynamic> input);
 }
 
 class StaticNativeCore implements NativeCore {
@@ -65,31 +59,24 @@ class StaticNativeCore implements NativeCore {
   }
 
   @override
-  Future<Map<String, dynamic>> favoritesListJson(String databasePath) async {
-    return {'ok': true, 'data': <dynamic>[]};
+  Future<Map<String, dynamic>> historyListJson(
+    Map<String, dynamic> input,
+  ) async {
+    return {'ok': false, 'error': {'code': 'unsupported'}};
   }
 
   @override
-  Future<Map<String, dynamic>> favoritesAddJson(
-    String databasePath,
-    Map<String, dynamic> item,
+  Future<Map<String, dynamic>> historyAddJson(
+    Map<String, dynamic> input,
   ) async {
-    return {
-      'ok': true,
-      'data': {
-        'id': 'static-favorite',
-        'item': item,
-        'created_at': DateTime.now().toUtc().toIso8601String(),
-      },
-    };
+    return {'ok': false, 'error': {'code': 'unsupported'}};
   }
 
   @override
-  Future<Map<String, dynamic>> favoritesRemoveJson(
-    String databasePath,
-    String favoriteId,
+  Future<Map<String, dynamic>> historyClearJson(
+    Map<String, dynamic> input,
   ) async {
-    return {'ok': true, 'data': null};
+    return {'ok': false, 'error': {'code': 'unsupported'}};
   }
 }
 
@@ -113,9 +100,9 @@ class FfiNativeCore implements NativeCore {
 
     try {
       final version = _readOwnedString(library, 'streambox_version');
-      final platformInfo =
-          jsonDecode(_readOwnedString(library, 'streambox_platform_info_json'))
-              as Map<String, dynamic>;
+      final platformInfo = jsonDecode(
+        _readOwnedString(library, 'streambox_platform_info_json'),
+      ) as Map<String, dynamic>;
       return NativeCoreHealth(
         available: true,
         version: version,
@@ -132,12 +119,44 @@ class FfiNativeCore implements NativeCore {
 
   @override
   Future<Map<String, dynamic>> echoJson(Map<String, dynamic> input) async {
-    final response = _callJson(
+    return _callJson(
       _openLibrary(),
       'streambox_echo_json',
       input,
     );
-    return response;
+  }
+
+  @override
+  Future<Map<String, dynamic>> historyListJson(
+    Map<String, dynamic> input,
+  ) async {
+    return _callJson(
+      _openLibrary(),
+      'streambox_history_list_json',
+      input,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> historyAddJson(
+    Map<String, dynamic> input,
+  ) async {
+    return _callJson(
+      _openLibrary(),
+      'streambox_history_add_json',
+      input,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> historyClearJson(
+    Map<String, dynamic> input,
+  ) async {
+    return _callJson(
+      _openLibrary(),
+      'streambox_history_clear_json',
+      input,
+    );
   }
 
   @override
