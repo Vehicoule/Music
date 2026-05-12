@@ -26,6 +26,7 @@ abstract class CoreClient {
   Future<void> deletePlaylist(String id);
   Future<List<Favorite>> favorites();
   Future<void> favorite(PlaybackItem item);
+  Future<void> unfavorite(String favoriteId);
   Future<void> addHistory(PlaybackItem item);
   Future<List<PlaybackItem>> history();
   Future<NativeCoreHealth> nativeHealth();
@@ -167,5 +168,20 @@ class HybridCoreClient implements CoreClient {
   @override
   Future<NativeCoreHealth> nativeHealth() {
     return rustCoreClient?.nativeHealth() ?? nativeCore.health();
+  }
+
+  Future<T> _tryRust<T>(
+    Future<T>? Function() rustCall,
+    Future<T> Function() apiCall,
+  ) async {
+    final rustFuture = rustCall();
+    if (rustFuture == null) {
+      return apiCall();
+    }
+    try {
+      return await rustFuture;
+    } catch (_) {
+      return apiCall();
+    }
   }
 }

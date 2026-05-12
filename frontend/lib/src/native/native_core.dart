@@ -159,6 +159,39 @@ class FfiNativeCore implements NativeCore {
     );
   }
 
+  @override
+  Future<Map<String, dynamic>> favoritesListJson(String databasePath) async {
+    return _callJson(
+      _openLibrary(),
+      'streambox_favorites_list_json',
+      {'database_path': databasePath},
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> favoritesAddJson(
+    String databasePath,
+    Map<String, dynamic> item,
+  ) async {
+    return _callJson(
+      _openLibrary(),
+      'streambox_favorites_add_json',
+      {'database_path': databasePath, 'item': item},
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> favoritesRemoveJson(
+    String databasePath,
+    String favoriteId,
+  ) async {
+    return _callJson(
+      _openLibrary(),
+      'streambox_favorites_remove_json',
+      {'database_path': databasePath, 'id': favoriteId},
+    );
+  }
+
   DynamicLibrary _openLibrary() {
     return _library ??=
         DynamicLibrary.open(_libraryName ?? _defaultLibraryName());

@@ -76,6 +76,80 @@ void main() {
     expect(result['data']['echo']['message'], 'bonjour');
   });
 
+  test(
+    'hybrid core client returns favorites from Rust when native call succeeds',
+    () async {
+    final item = _samplePlaybackItem();
+    final nativeCore = _FavoritesNativeCore(
+      listResponse: {
+        'ok': true,
+        'data': [
+          {'id': 'rust-favorite', 'item': item.toJson()},
+        ],
+      },
+    );
+    final apiClient = ApiClient(
+      baseUrl: 'http://127.0.0.1:8000',
+      httpClient: MockClient((request) async {
+        fail('FastAPI should not be called when Rust favorites succeed');
+      }),
+    );
+    final coreClient = HybridCoreClient(
+      apiClient: apiClient,
+      nativeCore: nativeCore,
+      rustCoreClient: RustCoreClient(
+        nativeCore: nativeCore,
+        fallbackApiClient: apiClient,
+        databasePath: '/tmp/streambox-test.sqlite3',
+      ),
+    );
+
+    final favorites = await coreClient.favorites();
+
+    expect(favorites, hasLength(1));
+    expect(favorites.single.id, 'rust-favorite');
+    expect(favorites.single.item.track.title, 'Test Song');
+    expect(nativeCore.listCalls, 1);
+  });
+
+  test(
+    'hybrid core client falls back to FastAPI when Rust favorites fail',
+    () async {
+    final item = _samplePlaybackItem();
+    final nativeCore = _FavoritesNativeCore(
+      listResponse: {
+        'ok': false,
+        'error': {'code': 'database_error', 'message': 'locked'},
+      },
+    );
+    final apiClient = ApiClient(
+      baseUrl: 'http://127.0.0.1:8000',
+      httpClient: MockClient((request) async {
+        expect(request.url.path, '/api/favorites');
+        return http.Response(
+          '[{"id":"api-favorite","item":${jsonEncode(item.toJson())}}]',
+          200,
+        );
+      }),
+    );
+    final coreClient = HybridCoreClient(
+      apiClient: apiClient,
+      nativeCore: nativeCore,
+      rustCoreClient: RustCoreClient(
+        nativeCore: nativeCore,
+        fallbackApiClient: apiClient,
+        databasePath: '/tmp/streambox-test.sqlite3',
+      ),
+    );
+
+    final favorites = await coreClient.favorites();
+
+    expect(favorites, hasLength(1));
+    expect(favorites.single.id, 'api-favorite');
+    expect(favorites.single.item.track.title, 'Test Song');
+    expect(nativeCore.listCalls, 1);
+  });
+
   test('native core ffi reports unavailable when the library cannot be loaded',
       () async {
     final nativeCore = FfiNativeCore(libraryName: 'missing_streambox_core');
@@ -247,4 +321,64 @@ class _RecordingCoreClient implements CoreClient {
 
   @override
   Future<List<AdapterCapability>> sources() => throw UnimplementedError();
+}
+
+PlaybackItem _samplePlaybackItem() {
+  return PlaybackItem(
+    id: 'item-1',
+    track: const TrackMetadata(
+      id: 'track-1',
+      title: 'Test Song',
+      artists: [ArtistMetadata(id: 'artist-1', name: 'Test Artist')],
+    ),
+  );
+}
+
+class _FavoritesNativeCore implements NativeCore {
+  _FavoritesNativeCore({required this.listResponse});
+
+  final Map<String, dynamic> listResponse;
+  var listCalls = 0;
+
+  @override
+  Future<Map<String, dynamic>> echoJson(Map<String, dynamic> input) async {
+    return {
+      'ok': true,
+      'data': {'echo': input},
+    };
+  }
+
+  @override
+  Future<Map<String, dynamic>> favoritesAddJson(
+    String databasePath,
+    Map<String, dynamic> item,
+  ) async {
+    return {
+      'ok': true,
+      'data': {'id': 'rust-favorite', 'item': item},
+    };
+  }
+
+  @override
+  Future<Map<String, dynamic>> favoritesListJson(String databasePath) async {
+    listCalls += 1;
+    return listResponse;
+  }
+
+  @override
+  Future<Map<String, dynamic>> favoritesRemoveJson(
+    String databasePath,
+    String favoriteId,
+  ) async {
+    return {'ok': true, 'data': null};
+  }
+
+  @override
+  Future<NativeCoreHealth> health() async {
+    return const NativeCoreHealth(
+      available: true,
+      version: 'streambox-core 0.1.0',
+      platform: 'test-platform',
+    );
+  }
 }

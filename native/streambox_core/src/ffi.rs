@@ -94,6 +94,10 @@ fn read_json_as<T: for<'de> Deserialize<'de>>(input_json: *const c_char) -> Resu
 }
 
 fn read_json_value(input_json: *const c_char) -> Result<Value, CoreError> {
+    read_json(input_json)
+}
+
+fn read_json_string(input_json: *const c_char) -> Result<String, CoreError> {
     if input_json.is_null() {
         return Err(CoreError::new(
             "null_input",
@@ -103,7 +107,7 @@ fn read_json_value(input_json: *const c_char) -> Result<Value, CoreError> {
     let input = unsafe { CStr::from_ptr(input_json) }
         .to_str()
         .map_err(|error| CoreError::new("invalid_utf8", error.to_string()))?;
-    serde_json::from_str(input).map_err(|error| CoreError::new("invalid_json", error.to_string()))
+    Ok(input.to_string())
 }
 
 fn ok_json<T: Serialize>(data: T) -> *mut c_char {
