@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:streambox/src/audio/resolve_prefetcher.dart';
 import 'package:streambox/src/audio/player_controller.dart';
 import 'package:streambox/src/models.dart';
+import 'package:streambox/src/widgets/diagnostics_panel.dart';
 import 'package:streambox/src/widgets/library_panel.dart';
 import 'package:streambox/src/widgets/now_playing_panel.dart';
 import 'package:streambox/src/widgets/player_dock.dart';
@@ -509,6 +510,71 @@ void main() {
     expect(find.text('Favorites'), findsOneWidget);
     expect(find.text('Recent'), findsOneWidget);
     expect(find.text('Hello'), findsWidgets);
+  });
+
+  testWidgets('diagnostics panel shows Rust DB health success details',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: DiagnosticsPanel(
+            diagnostics: [
+              'Rust core availability: available (streambox-core 0.1.0)',
+              'Rust platform: linux-x64',
+              'DB path: /tmp/streambox.sqlite3',
+              'Schema version: 3',
+              'User version: 3',
+              'Foreign keys enabled: yes',
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('DB path: /tmp/streambox.sqlite3'), findsNothing);
+
+    await tester.tap(find.text('Diagnostics'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Rust core availability: available (streambox-core 0.1.0)'),
+      findsOneWidget,
+    );
+    expect(find.text('Rust platform: linux-x64'), findsOneWidget);
+    expect(find.text('DB path: /tmp/streambox.sqlite3'), findsOneWidget);
+    expect(find.text('Schema version: 3'), findsOneWidget);
+    expect(find.text('User version: 3'), findsOneWidget);
+    expect(find.text('Foreign keys enabled: yes'), findsOneWidget);
+  });
+
+  testWidgets('diagnostics panel shows Rust DB health unavailable errors',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: DiagnosticsPanel(
+            diagnostics: [
+              'Rust core availability: unavailable (missing native library)',
+              'Rust platform: unknown',
+              'Rust DB health unavailable: missing native library',
+            ],
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Diagnostics'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Rust core availability: unavailable (missing native library)'),
+      findsOneWidget,
+    );
+    expect(find.text('Rust platform: unknown'), findsOneWidget);
+    expect(
+      find.text('Rust DB health unavailable: missing native library'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('now playing panel keeps playback errors local', (tester) async {
