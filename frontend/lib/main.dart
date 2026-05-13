@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 
-import 'src/api_client.dart';
 import 'src/audio/player_controller.dart';
 import 'src/core/core_client.dart';
 import 'src/core/rust_core_client.dart';
@@ -15,26 +14,9 @@ Future<void> main() async {
   MediaKit.ensureInitialized();
   await initializeDesktopWindow();
 
-  const apiBaseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: 'http://127.0.0.1:8000',
-  );
-  const useRustLocalLibrary = bool.fromEnvironment(
-    'USE_RUST_LOCAL_LIBRARY',
-    defaultValue: true,
-  );
-
-  final apiClient = ApiClient(baseUrl: apiBaseUrl);
   final nativeCore = FfiNativeCore();
-  final coreClient = HybridCoreClient(
-    apiClient: apiClient,
+  final coreClient = RustCoreClient(
     nativeCore: nativeCore,
-    rustCoreClient: RustCoreClient(
-      nativeCore: nativeCore,
-    ),
-    routingConfig: const CoreClientRoutingConfig(
-      useRustLocalLibrary: useRustLocalLibrary,
-    ),
   );
 
   runApp(StreamboxApp(coreClient: coreClient));
