@@ -1,149 +1,222 @@
-# yt-dlp Multi-Platform Availability Plan
-## 2026-05-13 (revised for Windows/macOS/Linux/Android)
-
-## Problem
-
-yt-dlp is required for playback resolution but is not bundled. Must work
-across 4 platforms with different constraints:
-
-| Platform | yt-dlp binary | Subprocess | Constraints |
-|----------|--------------|------------|-------------|
-| Windows  | `yt-dlp.exe` (PyInstaller, 15 MB) | Yes | Works |
-| macOS    | `yt-dlp_macos` (universal2, 15 MB) | Yes | Works |
-| Linux    | `yt-dlp_linux` (x64, 15 MB) | Yes | Works |
-| Android  | None exists | Restricted | No PyInstaller for ARM; subprocess limited |
-
-Android can't run yt-dlp at all. Desktop can, but the binary must be present.
+# yt-dlp Unified Python Plan
+## 2026-05-13 — Python yt-dlp everywhere
 
 ## Strategy
 
-**Desktop (Win/Mac/Linux): Auto-download on first use**
-- App checks for yt-dlp on startup
-- If missing, downloads platform-appropriate binary from GitHub releases
-- Stores in app data directory
-- Self-updates via `yt-dlp -U`
+Use the **same** Python yt-dlp package on all platforms — no standalone
+binary, no Dart port. Only packaging differs per platform.
 
-**Android: Metadata-only mode**
-- Discovery/search still works via source index + MusicBrainz
-- Playback resolution unavailable (no yt-dlp on Android)
-- Show clear message: "Streaming playback requires desktop version"
-- Future: explore pure-Dart HTTP-based YouTube resolution for Android
+| Platform | Python runtime | yt-dlp source | Call method |
+|----------|---------------|---------------|-------------|
+| Windows  | System Python  | pip / uv     | `python -m yt_dlp` |
+| macOS    | System Python  | pip / uv     | `python -m yt_dlp` |
+| Linux    | System Python  | pip / uv     | `python -m yt_dlp` |
+| Android  | Chaquopy (embedded CPython 3.11) | pip in build.gradle | Kotlin → Python → yt_dlp |
 
-**Graceful degradation everywhere:**
-- `is_available()` returns false → discovery uses MusicBrainz
-- Search results still appear (metadata), just can't play on Android
-- No crash, no cryptic errors
+## Why this works
 
-## Implementation Plan
+yt-dlp IS Python. The standalone exe is just PyInstaller wrapping Python +
+yt-dlp. Calling it via `python -m yt_dlp` uses the same code without the 15 MB
+wrapper. On desktop, Python is a reasonable dependency for a music app. On
+Android, Chaquopy has been shipping Python in apps since 2015.
 
-### Phase 1: Desktop auto-download
+## Phase 1: Desktop — call via Python
 
-**Task 1: Add auto-download to Rust core**
+### Task 1: Update ytdlp.rs to use Python
 
-New module: `native/streambox_core/src/services/ytdlp_download.rs`
+**File:** `native/streambox_core/src/services/ytdlp.rs`
 
-```
-fn ensure_ytdlp_available() -> Result<PathBuf, CoreError> {
-    // 1. Check data dir for existing binary
-    // 2. If missing, download from:
-    //    https://github.com/yt-dlp/yt-dlp/releases/download/{VERSION}/{file}
-    //    - Windows: yt-dlp.exe
-    //    - macOS: yt-dlp_macos
-    //    - Linux: yt-dlp_linux
-    // 3. Verify hash
-    // 4. Return path
+Replace hardcoded binary name with Python-based invocation:
+
+```rust
+#[cfg(not(target_os = "android"))]
+const YTDLP_BINARY: &str = "python";
+
+#[cfg(not(target_os = "android"))]
+fn ytdlp_command() -> Command {
+    let mut cmd = Command::new(YTDLP_BINARY);
+    cmd.arg("-m").arg("yt_dlp");
+    cmd
 }
 
-fn ytdlp_binary_path() -> Result<PathBuf, CoreError> {
-    // Check order: bundled → data dir → PATH → download
-}
-```
-
-**Pin version** in `native/streambox_core/ytdlp-version.txt`:
-```
-2026.03.17
-```
-
-**Task 2: Update ytdlp.rs binary resolution**
-
-Replace hardcoded `YTDLP_BINARY` with `ytdlp_binary_path()`:
-```
-const YTDLP_VERSION: &str = include_str!("../ytdlp-version.txt");
-
-fn resolve_ytdlp() -> Result<String, CoreError> {
-    // 1. Check data/<version>/yt-dlp(.exe)
-    // 2. Check PATH
-    // 3. Ensure available (download if needed)
+#[cfg(target_os = "android")]
+fn ytdlp_command() -> Command {
+    // On Android, yt-dlp is called via Chaquopy from Kotlin side.
+    // This function should never be called on Android; if it is, return
+    // an error immediately.
+    panic!("yt-dlp must be called via Chaquopy on Android");
 }
 ```
 
-**Task 3: Expose download progress via FFI**
+**Arguments stay the same** — just prepend `python -m yt_dlp`:
 
-Add FFI endpoint so Flutter can show download progress:
+```rust
+pub fn search(query: &str, limit: usize) -> Result<Vec<YtDlpTrack>, CoreError> {
+    let search_query = format!("ytsearch{}:{}", limit, clean_query);
+    let args = &[
+        "-m", "yt_dlp",
+        "--flat-playlist", "--dump-json", "--no-download",
+        "--default-search", "ytsearch", &search_query,
+    ];
+    // ...
+}
 ```
-streambox_ytdlp_download_json() → { status: "downloading"|"ready"|"error", progress: 0-100 }
+
+**is_available()** checks for Python + yt-dlp:
+
+```rust
+pub fn is_available() -> bool {
+    Command::new("python")
+        .args(["-m", "yt_dlp", "--version"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
 ```
 
-### Phase 2: Android awareness
+### Task 2: Update tests
 
-**Task 4: Platform detection in Rust**
+Remove tests that spawn `ping`/`sleep` (shell commands) and replace with
+Python-based tests:
 
-`streambox_platform_info_json` already returns `target_os`. Android
-reports `target_os = "android"`.
-
-**Task 5: Android-specific logic**
-
+```rust
+#[test]
+fn test_ytdlp_available() {
+    // Verifies python -m yt_dlp --version works
+    assert!(is_available());
+}
 ```
-fn is_available() -> bool {
-    if cfg!(target_os = "android") {
-        return false; // Never available on Android
+
+### Task 3: Add Python version check to diagnostics
+
+Update `RuntimeDebugResponse` to include Python version:
+
+```rust
+struct RuntimeDebugResponse {
+    api_version: String,
+    ytdlp_available: bool,
+    python_version: String,     // NEW
+}
+```
+
+## Phase 2: Android — Chaquopy
+
+### Task 4: Add Chaquopy Gradle plugin
+
+**File:** `frontend/android/build.gradle.kts` (top-level)
+
+```kotlin
+plugins {
+    id("com.chaquo.python") version "17.0.0" apply false
+}
+```
+
+**File:** `frontend/android/app/build.gradle.kts` (module-level)
+
+```kotlin
+plugins {
+    id("com.chaquo.python")
+}
+
+android {
+    defaultConfig {
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
     }
-    ytdlp_binary_path().is_ok()
+}
+
+chaquopy {
+    defaultConfig {
+        pip {
+            install("yt-dlp")
+        }
+    }
 }
 ```
 
-**Task 6: Flutter diagnostics per platform**
+### Task 5: Create Android yt-dlp bridge
 
-- Desktop: "yt-dlp not found. Downloading..." or "Install manually from..."
-- Android: "Streaming playback requires the desktop version of Streambox. Search and library features work normally."
+**File:** `frontend/android/app/src/main/kotlin/com/vehicoule/streambox/YtDlpBridge.kt`
 
-### Phase 3: Graceful degradation
+```kotlin
+class YtDlpBridge {
+    private val pyModule = Python.getInstance().getModule("yt_dlp")
 
-**Task 7: Discovery without yt-dlp**
+    fun search(query: String, limit: Int): String {
+        // Call yt-dlp search from Python, return JSON
+        val result = pyModule.callAttr("YoutubeDL", mapOf(
+            "quiet" to true,
+            "extract_flat" to true,
+            "default_search" to "ytsearch"
+        )).callAttr("extract_info", "ytsearch$limit:$query", false)
+        return result.toString()
+    }
 
-When yt-dlp unavailable:
-- `discover()` skips the yt-dlp phase entirely
-- Returns source index + MusicBrainz results
-- Items are marked `kind: "metadata"` (non-playable)
-- No crash, no hang
+    fun resolve(url: String): String {
+        val result = pyModule.callAttr("YoutubeDL", mapOf(
+            "quiet" to true,
+            "format" to "bestaudio/best"
+        )).callAttr("extract_info", url, false)
+        return result.toString()
+    }
+}
+```
 
-**Task 8: Resolve error handling**
+### Task 6: Wire Android bridge to Flutter
 
-When `resolve()` called without yt-dlp:
-- Desktop: return error with download instructions
-- Android: return error "Playback unavailable on Android"
+**File:** `frontend/lib/src/core/rust_core_client.dart`
 
-## Execution Order
+On Android, `resolve()` and `discoverPlayable()` call the Kotlin bridge
+via MethodChannel instead of going through Rust FFI:
 
-| Task | Description | Platform impact |
-|------|-------------|-----------------|
-| 1 | Auto-download module | Desktop only |
-| 2 | Update binary resolution | All (no-op on Android) |
-| 3 | Download progress FFI | Desktop only |
-| 4 | Platform detection | All |
-| 5 | Android skip logic | Android only |
-| 6 | Per-platform diagnostics | Flutter (all) |
-| 7 | Discovery degradation | All |
-| 8 | Resolve error messages | All |
+```dart
+Future<ResolveResponse> resolve(TrackMetadata track, {...}) async {
+    if (Platform.isAndroid) {
+        final json = await _channel.invokeMethod('ytdlp_resolve', {
+            'url': track.sourceUrl ?? track.id,
+        });
+        return ResolveResponse.fromJson(jsonDecode(json));
+    }
+    // Desktop: use Rust FFI as before
+    return nativeCore.ytdlpResolveJson({...});
+}
+```
 
-## Comparison with previous plan
+## Phase 3: Cross-platform testing
 
-| Aspect | Bundled binary (old) | Auto-download + Android skip (new) |
-|--------|---------------------|-----------------------------------|
-| Android | Broken | Works (metadata-only) |
-| Desktop first run | Works instantly | ~30s download on first launch |
-| Build complexity | CMake integration | None (runtime download) |
-| Binary size | +15 MB per platform | 0 build-time cost |
-| Update strategy | Manual rebuild | Auto `yt-dlp -U` |
-| Offline first run | Works | Fails gracefully (shows download prompt) |
-| Antivirus | Bundled exe may trigger | Same risk on download |
+### Task 7: Add Android integration tests
+
+- Test Chaquopy Python → yt-dlp call on Android emulator
+- Test fallback when Python unavailable
+
+### Task 8: Desktop CI
+
+- Add Python to CI runner dependencies
+- `pip install yt-dlp` or `uv tool install yt-dlp` in CI setup
+- Run yt-dlp tests in CI on all desktop platforms
+
+## Execution order
+
+| Task | Platform | Depends on |
+|------|----------|-----------|
+| 1 | Desktop | None |
+| 2 | Desktop | Task 1 |
+| 3 | Desktop | Task 1 |
+| 4 | Android | None |
+| 5 | Android | Task 4 |
+| 6 | Both (Flutter) | Tasks 1, 5 |
+| 7 | Android | Tasks 4-6 |
+| 8 | Desktop CI | Task 1 |
+
+## Trade-offs
+
+| Aspect | Python approach | Standalone binary |
+|--------|----------------|-------------------|
+| Android support | Chaquopy (~15 MB) | None |
+| Desktop dep | Python 3.8+ + pip | Nothing |
+| Binary size overhead | 0 (uses system Python) | +15 MB per platform |
+| Build complexity | Chaquopy Gradle setup | CMake copy step |
+| yt-dlp updates | `pip install -U yt-dlp` / `yt-dlp -U` | Auto-download exe |
+| Same code everywhere | Yes | No (Android uses Dart port) |
+| Antivirus risk | None (no bundled exe) | PyInstaller false positives |
