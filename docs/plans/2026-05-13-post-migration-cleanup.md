@@ -250,3 +250,24 @@ flutter test
 ```
 
 All tests must pass before merging.
+
+---
+
+## Completion Notes (2026-05-13)
+
+### Done (6 tasks, 6 commits on main)
+
+All P0-P2 tasks complete. Merged to `main` via fast-forward from
+`Vehicoule/fix/bump-api-version-and-cleanup`.
+
+- **99/99 tests pass** (64 lib + 35 integration)
+- 12 files changed, +880/-135 lines
+- 5 clippy warnings auto-fixed
+- Graphify refreshed: 943 nodes, 1351 edges
+
+### Blocked / Deferred
+
+| Task | Status | Reason |
+|------|--------|--------|
+| 7: Split HomeScreen | Blocked | Flutter SDK not installed on this host. Private widgets (lines 528-1054) already well-factored. Extracting _SearchCenter, _AlbumDetailView, _ArtistDetailView, _DetailHero, _QueueCenter to public widget files requires `flutter test` verification. |
+| 8: Chrono replacement | Skipped | Hand-rolled date math is ~200 lines and avoids ~2MB chrono binary bloat. No functional benefit. Only reconsider if chrono needed for another dependency. |
