@@ -142,7 +142,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (runtime.apiVersion != expectedApiVersion) {
         setState(() {
           runtimeWarning =
-              'Backend looks stale (${runtime.apiVersion}). Restart FastAPI.';
+              'Native core version mismatch (got ${runtime.apiVersion}, expected $expectedApiVersion).';
         });
       } else if (!runtime.ytdlpAvailable) {
         setState(() {
@@ -156,7 +156,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
       setState(() {
         runtimeWarning =
-            'Backend diagnostics are missing. Restart FastAPI if search fails.';
+            'Native core diagnostics are missing. Check Rust build output.';
       });
     }
   }
@@ -395,7 +395,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _friendlyError(Object exception) {
     final message = exception.toString();
     if (message.contains('Connection refused')) {
-      return 'Backend is not running. Start FastAPI and try again.';
+      return 'Native core is unreachable. Check that streambox_core.dll is built.';
     }
     if (message.contains('HTTP 500')) {
       return 'The backend failed that request. Check the server log and retry.';
