@@ -74,6 +74,7 @@ fn favorites_ffi_json_matches_fastapi_fixture_shapes() {
     assert_eq!(added["ok"], true);
     assert_same_shape(&added["data"], &add_fixture["response"]);
     assert_field_names(&added["data"], &add_fixture["response"]);
+    assert_rfc3339_utc(added["data"]["created_at"].as_str().unwrap());
     assert_eq!(
         added["data"]["item"]["track"]["canonical_title"],
         "Fixture Song"
@@ -86,6 +87,7 @@ fn favorites_ffi_json_matches_fastapi_fixture_shapes() {
     assert_eq!(listed["ok"], true);
     assert_same_shape(&listed["data"], &list_fixture["response"]);
     assert_field_names(&listed["data"], &list_fixture["response"]);
+    assert_rfc3339_utc(listed["data"][0]["created_at"].as_str().unwrap());
 
     let removed = call_json(
         streambox_favorites_remove_json,
@@ -138,6 +140,13 @@ fn assert_field_names(actual: &Value, expected: &Value) {
         }
         _ => {}
     }
+}
+
+fn assert_rfc3339_utc(value: &str) {
+    assert!(
+        value.ends_with('Z') && value.contains('T'),
+        "expected UTC RFC3339 timestamp, got {value}"
+    );
 }
 
 fn fixture(relative_path: &str) -> Value {

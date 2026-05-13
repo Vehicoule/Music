@@ -29,6 +29,8 @@ fn stores_updates_lists_and_deletes_playlists_in_sqlite() {
     assert_eq!(created.name, "Favorites");
     assert_eq!(created.description, "Saved tracks");
     assert_eq!(created.tracks, vec![item]);
+    assert_rfc3339_utc(&created.created_at);
+    assert_rfc3339_utc(&created.updated_at);
 
     let updated_item = sample_item("track-2", "Track Two");
     let updated = db::update_playlist(
@@ -46,10 +48,14 @@ fn stores_updates_lists_and_deletes_playlists_in_sqlite() {
     assert_eq!(updated.name, "Roadtrip");
     assert_eq!(updated.description, "Saved tracks");
     assert_eq!(updated.tracks, vec![updated_item]);
+    assert_rfc3339_utc(&updated.created_at);
+    assert_rfc3339_utc(&updated.updated_at);
 
     let playlists = db::list_playlists(&database_path).unwrap();
     assert_eq!(playlists.len(), 1);
     assert_eq!(playlists[0].id, created.id);
+    assert_rfc3339_utc(&playlists[0].created_at);
+    assert_rfc3339_utc(&playlists[0].updated_at);
 
     db::delete_playlist(&database_path, &created.id).unwrap();
     assert!(db::list_playlists(&database_path).unwrap().is_empty());
@@ -134,6 +140,13 @@ fn sample_item(id: &str, title: &str) -> PlaybackItem {
         })),
         added_at: "2026-05-12T00:00:00Z".to_string(),
     }
+}
+
+fn assert_rfc3339_utc(value: &str) {
+    assert!(
+        value.ends_with('Z') && value.contains('T'),
+        "expected UTC RFC3339 timestamp, got {value}"
+    );
 }
 
 unsafe fn take_owned_json(pointer: *mut std::os::raw::c_char) -> Value {
