@@ -17,6 +17,10 @@ frontend/android/app/src/main/jniLibs/
 
 # Rust
 native/streambox_core/target/
+native/streambox_core/data/
+
+# Graphify
+graphify-out/
 
 # Editor / OS
 .DS_Store

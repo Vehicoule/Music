@@ -1,6 +1,8 @@
 use std::process::Command;
 use std::time::Duration;
 
+use std::io::Read;
+
 use serde::Serialize;
 use serde_json::Value;
 
@@ -98,7 +100,6 @@ fn run_ytdlp(args: &[&str], timeout: Duration) -> Result<String, CoreError> {
 fn run_command(binary: &str, args: &[&str], timeout: Duration) -> Result<String, CoreError> {
     let owned_args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     let binary_owned: String = binary.to_string();
-    use std::io::Read;
 
     let result = std::thread::spawn(move || {
         let cmd: Vec<&str> = owned_args.iter().map(|s| s.as_str()).collect();
