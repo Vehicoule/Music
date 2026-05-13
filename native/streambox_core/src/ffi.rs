@@ -314,6 +314,7 @@ pub unsafe extern "C" fn streambox_musicbrainz_search_json(
     }
 }
 
+#[deprecated(note = "Use Dart-side YtDlpEngine instead")]
 #[no_mangle]
 pub unsafe extern "C" fn streambox_ytdlp_search_json(input_json: *const c_char) -> *mut c_char {
     match read_json::<YtDlpSearchRequest>(input_json) {
@@ -332,6 +333,7 @@ pub unsafe extern "C" fn streambox_ytdlp_search_json(input_json: *const c_char) 
     }
 }
 
+#[deprecated(note = "Use Dart-side YtDlpEngine instead")]
 #[no_mangle]
 pub unsafe extern "C" fn streambox_ytdlp_resolve_json(input_json: *const c_char) -> *mut c_char {
     match read_json::<YtDlpResolveRequest>(input_json) {
@@ -343,6 +345,7 @@ pub unsafe extern "C" fn streambox_ytdlp_resolve_json(input_json: *const c_char)
     }
 }
 
+#[deprecated(note = "Use Dart-side YtDlpEngine instead")]
 #[no_mangle]
 pub unsafe extern "C" fn streambox_ytdlp_available_json(input_json: *const c_char) -> *mut c_char {
     // input_json is ignored; yt-dlp availability is a global check

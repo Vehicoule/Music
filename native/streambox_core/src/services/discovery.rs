@@ -47,7 +47,8 @@ pub struct AlbumRef {
     pub id: Option<String>,
 }
 
-/// Full discover pipeline. Mirrors Python's `DiscoveryService.discover()`.
+/// Full discover pipeline. Two-phase: SourceIndex → MusicBrainz (yt-dlp phase
+/// moved to Dart-side YtDlpEngine/NewPipeEngine).
 /// Returns (items, warnings).
 pub fn discover(
     database_path: &Path,
@@ -75,22 +76,8 @@ pub fn discover(
         }
     }
 
-    // 2. Try yt-dlp search
-    match ytdlp::search(clean_query, (limit * 2).min(24)) {
-        Ok(tracks) if !tracks.is_empty() => {
-            let items: Vec<DiscoverResult> = tracks
-                .into_iter()
-                .take(limit)
-                .map(ytdlp_track_to_discover)
-                .collect();
-            // Cache results in source index
-            let entries: Vec<SourceIndexEntry> =
-                items.iter().map(discover_to_source_index_entry).collect();
-            let _ = db::upsert_source_index_entries(database_path, &entries);
-            return Ok((items, vec![]));
-        }
-        _ => {}
-    }
+    // Phase 2 (yt-dlp search) removed — moved to Dart-side YtDlpEngine / NewPipeEngine.
+    // The Rust FFI yt-dlp endpoints remain for backward compatibility but are deprecated.
 
     // 3. Fall back to MusicBrainz metadata search
     match MusicBrainzClient::new() {
