@@ -6,6 +6,8 @@ import '../audio/player_controller.dart';
 import '../audio/resolve_prefetcher.dart';
 import '../core/core_client.dart';
 import '../models.dart';
+import '../native/native_core.dart';
+import '../resolver/yt_dlp_engine.dart';
 import '../theme.dart';
 import '../widgets/album_detail_view.dart';
 import '../widgets/artist_detail_view.dart';
@@ -28,10 +30,12 @@ class HomeScreen extends StatefulWidget {
     super.key,
     required this.coreClient,
     required this.playerController,
+    this.nativeCore,
   });
 
   final CoreClient coreClient;
   final PlayerController playerController;
+  final NativeCore? nativeCore;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -64,6 +68,13 @@ class _HomeScreenState extends State<HomeScreen> {
   bool detailLoading = false;
   List<String> nativeDiagnostics = const [];
   int _searchToken = 0;
+  TrackResolver? __resolver;
+  TrackResolver get _resolver {
+    __resolver ??= YtDlpEngine(nativeCore: widget.nativeCore!);
+    return __resolver!;
+  }
+
+  bool get _hasResolver => widget.nativeCore != null;
   late final ResolvePrefetcher resolvePrefetcher;
 
   @override
@@ -122,13 +133,26 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _loadPlayableMatch(String query, int token) async {
     setState(() => playableLoading = true);
     try {
-      final response = await widget.coreClient.discoverPlayable(query);
-      if (!mounted || token != _searchToken) {
-        return;
+      if (_hasResolver) {
+        final tracks = await _resolver.search(query);
+        if (!mounted || token != _searchToken) {
+          return;
+        }
+        final items = tracks
+            .map((track) => _ytdlpTrackToDiscoverItem(track))
+            .toList();
+        setState(() {
+          topPlayable = items.isEmpty ? null : items.first;
+        });
+      } else {
+        final response = await widget.coreClient.discoverPlayable(query);
+        if (!mounted || token != _searchToken) {
+          return;
+        }
+        setState(() {
+          topPlayable = response.items.isEmpty ? null : response.items.first;
+        });
       }
-      setState(() {
-        topPlayable = response.items.isEmpty ? null : response.items.first;
-      });
     } catch (_) {
       if (!mounted || token != _searchToken) {
         return;
@@ -231,7 +255,12 @@ class _HomeScreenState extends State<HomeScreen> {
       } else if (resolvePrefetcher.candidatesFor(item) != null) {
         await widget.playerController
             .playWithCandidates(track, resolvePrefetcher.candidatesFor(item)!);
+      } else if (_hasResolver) {
+        final source = await _resolver.resolve(track.sourceUrl ?? '');
+        await widget.playerController
+            .playItem(PlaybackItem.fromTrack(track, source));
       } else {
+        // Fallback to deprecated RustCoreClient.resolve path
         await widget.playerController
             .resolveAndPlay(track, sourceUrl: track.sourceUrl);
       }
@@ -272,7 +301,12 @@ class _HomeScreenState extends State<HomeScreen> {
           PlaybackItem.fromTrack(
               track, resolvePrefetcher.candidatesFor(item)!.first),
         );
+      } else if (_hasResolver) {
+        final source = await _resolver.resolve(track.sourceUrl ?? '');
+        widget.playerController
+            .enqueue(PlaybackItem.fromTrack(track, source));
       } else {
+        // Fallback to deprecated RustCoreClient.resolve path
         await widget.playerController
             .resolveAndEnqueue(track, sourceUrl: track.sourceUrl);
       }
@@ -374,6 +408,37 @@ class _HomeScreenState extends State<HomeScreen> {
       detailError = null;
       detailLoading = false;
     });
+  }
+
+  DiscoverItem _ytdlpTrackToDiscoverItem(Map<String, dynamic> track) {
+    final id = track['id'] as String? ?? '';
+    final title = track['title'] as String? ?? '';
+    final url = track['url'] as String? ?? '';
+    final webpageUrl = track['webpage_url'] as String? ?? url;
+    final uploader = track['uploader'] as String? ?? '';
+    final duration = (track['duration_seconds'] as num?)?.toDouble();
+    final thumbnail = track['thumbnail'] as String?;
+
+    return DiscoverItem(
+      id: 'youtube:$id',
+      mode: 'stream',
+      kind: 'song',
+      label: 'YouTube Music',
+      track: TrackMetadata(
+        id: 'youtube:$id',
+        title: title,
+        artists: uploader.isNotEmpty
+            ? [ArtistMetadata(name: uploader)]
+            : [const ArtistMetadata(name: 'YouTube')],
+        lengthMs: duration != null ? (duration * 1000).round() : null,
+        artworkUrl: thumbnail,
+        sourceProvider: 'youtube',
+        sourceId: id,
+        sourceUrl: webpageUrl,
+        sourceKind: 'song',
+        source: 'youtube',
+      ),
+    );
   }
 
   Future<void> _testAudioEngine() async {

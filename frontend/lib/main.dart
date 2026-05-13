@@ -19,13 +19,21 @@ Future<void> main() async {
     nativeCore: nativeCore,
   );
 
-  runApp(StreamboxApp(coreClient: coreClient));
+  runApp(StreamboxApp(
+    coreClient: coreClient,
+    nativeCore: nativeCore,
+  ));
 }
 
 class StreamboxApp extends StatefulWidget {
-  const StreamboxApp({super.key, required this.coreClient});
+  const StreamboxApp({
+    super.key,
+    required this.coreClient,
+    required this.nativeCore,
+  });
 
   final CoreClient coreClient;
+  final NativeCore nativeCore;
 
   @override
   State<StreamboxApp> createState() => _StreamboxAppState();
@@ -55,6 +63,7 @@ class _StreamboxAppState extends State<StreamboxApp> {
       home: HomeScreen(
         coreClient: widget.coreClient,
         playerController: playerController,
+        nativeCore: widget.nativeCore,
       ),
     );
   }

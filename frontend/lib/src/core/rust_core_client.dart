@@ -48,6 +48,7 @@ class RustCoreClient implements CoreClient {
   }
 
   @override
+  @Deprecated('Use YtDlpEngine from lib/src/resolver/ instead')
   Future<DiscoverResponse> discoverPlayable(String query) async {
     // yt-dlp search returns playable results directly
     final response = await nativeCore.ytdlpSearchJson({
@@ -117,6 +118,7 @@ class RustCoreClient implements CoreClient {
   }
 
   @override
+  @Deprecated('Use YtDlpEngine from lib/src/resolver/ instead')
   Future<ResolveResponse> resolve(
     TrackMetadata track, {
     List<String> adapters = const [],
