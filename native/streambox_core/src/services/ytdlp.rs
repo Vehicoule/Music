@@ -91,29 +91,85 @@ pub fn version() -> Option<String> {
 
 // ── Internal helpers ──
 
-fn run_ytdlp(args: &[&str], _timeout: Duration) -> Result<String, CoreError> {
+fn run_ytdlp(args: &[&str], timeout: Duration) -> Result<String, CoreError> {
+    run_command(YTDLP_BINARY, args, timeout)
+}
+
+fn run_command(binary: &str, args: &[&str], timeout: Duration) -> Result<String, CoreError> {
     let owned_args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    let binary_owned: String = binary.to_string();
+    use std::io::Read;
+
     let result = std::thread::spawn(move || {
         let cmd: Vec<&str> = owned_args.iter().map(|s| s.as_str()).collect();
-        Command::new(YTDLP_BINARY).args(&cmd).output()
+        let mut child = match Command::new(&binary_owned)
+            .args(&cmd)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+        {
+            Ok(c) => c,
+            Err(error) => {
+                return Err(CoreError::new(
+                    "ytdlp_spawn_failed",
+                    format!("failed to run {binary_owned}: {error}"),
+                ));
+            }
+        };
+
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    // Read remaining stdout/stderr after process exits
+                    let mut stdout = Vec::new();
+                    let mut stderr = Vec::new();
+                    let _ = child.stdout.as_mut().map(|o| o.read_to_end(&mut stdout));
+                    let _ = child.stderr.as_mut().map(|o| o.read_to_end(&mut stderr));
+
+                    if !status.success() {
+                        return Err(CoreError::new(
+                            "ytdlp_error",
+                            String::from_utf8_lossy(&stderr).trim().to_string(),
+                        ));
+                    }
+
+                    return String::from_utf8(stdout)
+                        .map_err(|e| CoreError::new("ytdlp_invalid_utf8", e.to_string()));
+                }
+                Ok(None) => {
+                    if std::time::Instant::now() >= deadline {
+                        // Timeout: kill the child process
+                        let _ = child.kill();
+                        let _ = child.wait(); // reap zombie
+
+                        // Read whatever stderr we got for diagnostic
+                        let mut stderr = Vec::new();
+                        let _ = child.stderr.as_mut().map(|o| o.read_to_end(&mut stderr));
+
+                        return Err(CoreError::new(
+                            "ytdlp_timeout",
+                            format!(
+                                "command timed out after {timeout:?}: {binary_owned}: {}",
+                                String::from_utf8_lossy(&stderr).trim()
+                            ),
+                        ));
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                Err(error) => {
+                    return Err(CoreError::new(
+                        "ytdlp_wait_failed",
+                        format!("failed to wait for yt-dlp: {error}"),
+                    ));
+                }
+            }
+        }
     })
     .join()
     .map_err(|_| CoreError::new("ytdlp_thread_panic", "yt-dlp thread panicked"))?;
 
-    let output = result.map_err(|error| {
-        CoreError::new(
-            "ytdlp_spawn_failed",
-            format!("failed to run yt-dlp: {error}"),
-        )
-    })?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(CoreError::new("ytdlp_error", stderr.trim().to_string()));
-    }
-
-    String::from_utf8(output.stdout)
-        .map_err(|error| CoreError::new("ytdlp_invalid_utf8", error.to_string()))
+    result
 }
 
 fn parse_ytdlp_output(output: &str) -> Result<Vec<YtDlpTrack>, CoreError> {
@@ -274,5 +330,38 @@ mod tests {
     fn test_version_check() {
         // Just verify the function doesn't panic
         let _ = version();
+    }
+
+    #[test]
+    fn test_run_ytdlp_timeout() {
+        // Use a command that blocks to verify timeout kills it.
+        // On Windows: ping -n 999 127.0.0.1 (sends 999 pings, ~1s each)
+        // On Unix: sleep 999
+        let (cmd, args): (&str, &[&str]) = if cfg!(target_os = "windows") {
+            ("ping", &["-n", "999", "127.0.0.1"])
+        } else {
+            ("sleep", &["999"])
+        };
+
+        // Very short timeout to trigger fast
+        let result = run_command(cmd, args, Duration::from_millis(50));
+        assert!(result.is_err(), "Expected timeout error, got: {:?}", result);
+        if let Err(ref e) = result {
+            assert_eq!(
+                e.code, "ytdlp_timeout",
+                "Expected code ytdlp_timeout, got: {:?}",
+                e
+            );
+        }
+    }
+
+    #[test]
+    fn test_run_ytdlp_timeout_success_path() {
+        // Verify a fast command still works fine with timeout
+        let result = run_command("echo", &["hello"], Duration::from_secs(5));
+        assert!(result.is_ok(), "Expected Ok, got: {:?}", result);
+        if let Ok(ref output) = result {
+            assert_eq!(output.trim(), "hello");
+        }
     }
 }
