@@ -1,14 +1,13 @@
 use std::collections::HashSet;
-use std::sync::LazyLock;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use regex_lite::Regex;
 use reqwest::blocking::Client;
 use serde_json::Value;
 
 use crate::error::CoreError;
 use crate::models::{AlbumMetadata, ArtistMetadata, MusicBrainzTrack};
+use crate::services::listenbrainz::ListenBrainzClient;
 
 const MUSICBRAINZ_BASE_URL: &str = "https://musicbrainz.org/ws/2";
 const USER_AGENT: &str = "Streambox/0.1.0 ( personal-music-player@localhost )";
@@ -89,19 +88,13 @@ fn query_variants(query: &str) -> Vec<QueryVariant> {
 // ── Token helpers ─────────────────────────────────────────────────────────────
 
 fn tokens(value: &str) -> HashSet<String> {
-    value
-        .to_lowercase()
-        .split(|c: char| !c.is_ascii_alphanumeric())
-        .filter(|s| s.len() > 1)
-        .map(String::from)
-        .collect()
+    crate::ranking::tokenize(value).into_iter().collect()
 }
 
 fn core_tokens(value: &str) -> HashSet<String> {
-    let all = tokens(value);
-    let soft: HashSet<&str> = SOFT.iter().copied().collect();
-    all.into_iter()
-        .filter(|t| !soft.contains(t.as_str()))
+    let all = crate::ranking::tokenize(value);
+    crate::ranking::core_tokens(&all, SOFT)
+        .into_iter()
         .collect()
 }
 
@@ -110,20 +103,17 @@ fn cue_set() -> HashSet<String> {
 }
 
 // ── strip_parenthetical ───────────────────────────────────────────────────────
-
-static PAREN_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\([^)]*\)").unwrap());
+//
+// Delegated to `crate::ranking::strip_parenthetical`.
 
 fn strip_parenthetical(value: &str) -> String {
-    PAREN_RE.replace_all(value, "").trim().to_string()
+    crate::ranking::strip_parenthetical(value)
 }
 
 // ── normalize_title ───────────────────────────────────────────────────────────
 
 fn normalize_title(value: &str) -> String {
-    let stripped = strip_parenthetical(value);
-    let mut sorted: Vec<String> = core_tokens(&stripped).into_iter().collect();
-    sorted.sort();
-    sorted.join(" ")
+    crate::ranking::normalize_title(value, SOFT)
 }
 
 fn artist_label(artists: &[ArtistMetadata]) -> String {
@@ -415,10 +405,11 @@ fn rank_tracks(query: &str, tracks: Vec<MusicBrainzTrack>) -> Vec<MusicBrainzTra
             // Duration
             if let Some(length_ms) = track.length_ms {
                 let duration_seconds = length_ms as f64 / 1000.0;
-                if duration_seconds < 45.0 {
+                let base = crate::ranking::duration_score(Some(duration_seconds), 120.0, 420.0);
+                if base == -35 {
                     score -= 35.0;
-                } else if (120.0..=420.0).contains(&duration_seconds) {
-                    score += 18.0;
+                } else if base == 12 {
+                    score += 18.0; // musicbrainz overrides ideal weight
                 } else if (90.0..=540.0).contains(&duration_seconds) {
                     score += 8.0;
                 }
@@ -572,6 +563,20 @@ impl MusicBrainzClient {
             .map(recording_to_track)
             .filter(|t| !t.title.is_empty() && !t.artists.is_empty())
             .collect();
+
+        // Enrich tracks with ListenBrainz popularity data before ranking
+        if let Ok(lb_client) = ListenBrainzClient::new() {
+            let mbid_refs: Vec<String> = tracks.iter().map(|t| t.id.clone()).collect();
+            if let Ok(popularity_map) = lb_client.recording_popularity(&mbid_refs) {
+                for track in &mut tracks {
+                    if let Some(stats) = popularity_map.get(&track.id) {
+                        track.listen_count = stats.listen_count;
+                        track.listener_count = stats.listener_count;
+                        track.popularity_score = Some(stats.score);
+                    }
+                }
+            }
+        }
 
         tracks = rank_tracks(clean_query, tracks);
         tracks.truncate(limit);
@@ -969,5 +974,140 @@ mod tests {
     fn test_urlencoding_basic() {
         let result = urlencoding("Hello World");
         assert_eq!(result, "Hello+World");
+    }
+
+    #[test]
+    fn test_enrich_tracks_with_popularity_gracefully_handles_empty_ids() {
+        // Verify that the enrichment step (as used in search_tracks) gracefully
+        // handles tracks with empty/invalid MBIDs without crashing
+        let lb_client = ListenBrainzClient::new().unwrap();
+        let tracks = vec![
+            MusicBrainzTrack {
+                id: "".into(),
+                title: "Empty ID".into(),
+                artists: vec![ArtistMetadata {
+                    id: Some("art-1".into()),
+                    name: "Artist".into(),
+                }],
+                album: None,
+                length_ms: None,
+                score: None,
+                match_reasons: vec![],
+                listen_count: None,
+                listener_count: None,
+                popularity_score: None,
+                source: "musicbrainz".into(),
+                release_count: 0,
+            },
+            MusicBrainzTrack {
+                id: "".into(),
+                title: "Also Empty".into(),
+                artists: vec![ArtistMetadata {
+                    id: Some("art-2".into()),
+                    name: "Artist 2".into(),
+                }],
+                album: None,
+                length_ms: None,
+                score: None,
+                match_reasons: vec![],
+                listen_count: None,
+                listener_count: None,
+                popularity_score: None,
+                source: "musicbrainz".into(),
+                release_count: 0,
+            },
+        ];
+        // Collect MBIDs (all empty, will hit the early-return path)
+        let mbid_refs: Vec<String> = tracks.iter().map(|t| t.id.clone()).collect();
+        // Should return Ok with empty map (never panics, never hits network)
+        let result = lb_client.recording_popularity(&mbid_refs);
+        assert!(result.is_ok());
+        let popularity_map = result.unwrap();
+        assert!(popularity_map.is_empty());
+    }
+
+    #[test]
+    fn test_popularity_enrichment_maps_correctly() {
+        // Test the data mapping logic that search_tracks uses to enrich tracks
+        use std::collections::HashMap;
+
+        use crate::models::PopularityStats;
+
+        let mut tracks = vec![
+            MusicBrainzTrack {
+                id: "mbid-111".into(),
+                title: "Popular Song".into(),
+                artists: vec![ArtistMetadata {
+                    id: Some("art-1".into()),
+                    name: "Popular Artist".into(),
+                }],
+                album: None,
+                length_ms: Some(240000),
+                score: Some(100),
+                match_reasons: vec![],
+                listen_count: None,
+                listener_count: None,
+                popularity_score: None,
+                source: "musicbrainz".into(),
+                release_count: 1,
+            },
+            MusicBrainzTrack {
+                id: "mbid-222".into(),
+                title: "Less Popular Song".into(),
+                artists: vec![ArtistMetadata {
+                    id: Some("art-2".into()),
+                    name: "Less Popular Artist".into(),
+                }],
+                album: None,
+                length_ms: Some(180000),
+                score: Some(90),
+                match_reasons: vec![],
+                listen_count: None,
+                listener_count: None,
+                popularity_score: None,
+                source: "musicbrainz".into(),
+                release_count: 1,
+            },
+        ];
+
+        // Simulate the enrichment step exactly as in search_tracks
+        let mut popularity_map: HashMap<String, PopularityStats> = HashMap::new();
+        let mut stats1 = PopularityStats {
+            listen_count: Some(5000),
+            listener_count: Some(800),
+            score: 0.0,
+        };
+        stats1.compute_score();
+        popularity_map.insert("mbid-111".into(), stats1);
+
+        let mut stats2 = PopularityStats {
+            listen_count: Some(50),
+            listener_count: Some(10),
+            score: 0.0,
+        };
+        stats2.compute_score();
+        popularity_map.insert("mbid-222".into(), stats2);
+
+        // Apply enrichment (same logic as in search_tracks)
+        for track in &mut tracks {
+            if let Some(stats) = popularity_map.get(&track.id) {
+                track.listen_count = stats.listen_count;
+                track.listener_count = stats.listener_count;
+                track.popularity_score = Some(stats.score);
+            }
+        }
+
+        // Track 1 should have high popularity
+        assert_eq!(tracks[0].listen_count, Some(5000));
+        assert_eq!(tracks[0].listener_count, Some(800));
+        assert!(tracks[0].popularity_score.unwrap() > 0.0);
+        // score = listeners*10 + listens = 800*10 + 5000 = 13000
+        assert!((tracks[0].popularity_score.unwrap() - 13000.0).abs() < 0.01);
+
+        // Track 2 should have lower popularity
+        assert_eq!(tracks[1].listen_count, Some(50));
+        assert_eq!(tracks[1].listener_count, Some(10));
+        // score = 10*10 + 50 = 150
+        assert!((tracks[1].popularity_score.unwrap() - 150.0).abs() < 0.01);
     }
 }

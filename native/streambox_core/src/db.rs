@@ -822,11 +822,7 @@ fn rank_source_entries(query: &str, entries: Vec<SourceIndexEntry>) -> Vec<Sourc
             reasons.push("fuzzy");
         }
         if let Some(duration) = entry.duration_seconds {
-            if (120.0..=420.0).contains(&duration) {
-                score += 12.0;
-            } else if duration < 45.0 || duration > 900.0 {
-                score -= 35.0;
-            }
+            score += crate::ranking::duration_score(Some(duration), 120.0, 420.0) as f64;
         }
         if !title_tokens.is_disjoint(&official) {
             score += 10.0;
@@ -870,21 +866,7 @@ fn matches_source_scope(entry: &SourceIndexEntry, scope: Option<&str>) -> bool {
 }
 
 fn tokens(value: &str) -> HashSet<String> {
-    let mut output = HashSet::new();
-    let mut current = String::new();
-    for ch in value.chars().flat_map(|ch| ch.to_lowercase()) {
-        if ch.is_ascii_alphanumeric() {
-            current.push(ch);
-        } else if current.len() > 1 {
-            output.insert(std::mem::take(&mut current));
-        } else {
-            current.clear();
-        }
-    }
-    if current.len() > 1 {
-        output.insert(current);
-    }
-    output
+    crate::ranking::tokenize(value).into_iter().collect()
 }
 
 fn normalize_text(value: &str) -> String {
