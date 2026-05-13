@@ -232,7 +232,7 @@ fn json_to_track(value: &Value) -> Option<YtDlpTrack> {
         value
             .get("duration_string")
             .and_then(|v| v.as_str())
-            .and_then(|s| parse_duration_str(s))
+            .and_then(parse_duration_str)
     });
 
     let uploader = value

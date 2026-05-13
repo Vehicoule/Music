@@ -107,7 +107,7 @@ pub fn cue_penalty(title: &str, cue_words: &[&str]) -> i32 {
 pub fn duration_score(duration_secs: Option<f64>, min: f64, max: f64) -> i32 {
     match duration_secs {
         Some(d) if d >= min && d <= max => 12,
-        Some(d) if d < 45.0 || d > 900.0 => -35,
+        Some(d) if !(45.0..=900.0).contains(&d) => -35,
         _ => 0,
     }
 }
