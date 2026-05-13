@@ -269,5 +269,5 @@ All P0-P2 tasks complete. Merged to `main` via fast-forward from
 
 | Task | Status | Reason |
 |------|--------|--------|
-| 7: Split HomeScreen | Blocked | Flutter SDK not installed on this host. Private widgets (lines 528-1054) already well-factored. Extracting _SearchCenter, _AlbumDetailView, _ArtistDetailView, _DetailHero, _QueueCenter to public widget files requires `flutter test` verification. |
+| 7: Split HomeScreen | ✅ Done | Extracted 9 private widgets to separate files. HomeScreen 1054→534 lines. 9 new files in widgets/. |
 | 8: Chrono replacement | Skipped | Hand-rolled date math is ~200 lines and avoids ~2MB chrono binary bloat. No functional benefit. Only reconsider if chrono needed for another dependency. |
