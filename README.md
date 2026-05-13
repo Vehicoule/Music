@@ -72,6 +72,14 @@ cargo test
 cargo build
 ```
 
+After rebuilding the Rust core, copy the DLL to the Flutter build directory
+so the app picks up the new version:
+
+```bash
+cp native/streambox_core/target/debug/streambox_core.dll \
+   frontend/build/windows/x64/runner/Debug/streambox_core.dll
+```
+
 ### Frontend
 
 From `frontend/`:
