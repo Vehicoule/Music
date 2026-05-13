@@ -1,7 +1,14 @@
 # Rust Core Migration
 
-FastAPI backend was removed on 2026-05-13. See plan in docs/plans/ for details.
-All features are now Rust-native.
+FastAPI backend was removed on 2026-05-13. All features are now Rust-native.
+
+**Post-migration cleanup completed 2026-05-13:**
+- API version bumped from 0.1.0 to 0.3.0
+- Stale FastAPI messages removed from Flutter diagnostics
+- yt-dlp subprocess timeout enforced
+- Shared ranking module extracted (`src/ranking.rs`)
+- ListenBrainz wired into discovery scoring
+- README updated to reflect all-Rust architecture
 
 ## Current Backend Roles
 

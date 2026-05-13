@@ -183,11 +183,12 @@ accept the equivalent explicit-offset form, for example
 support offset timestamps. Rust should emit UTC timestamps consistently and must
 not emit Unix epoch numbers in JSON responses.
 
-## FastAPI And Rust Compatibility Requirement
+## Wire Compatibility
 
-The Rust implementation must be wire-compatible with FastAPI for every endpoint
-listed above:
+The Rust FFI protocol must be wire-compatible with the original FastAPI contracts
+for every endpoint listed above. All fixtures in
+`docs/api-contract-fixtures/` pass against the Rust core via
+`tests/json_contract.rs`.
 
-These are the first features planned for migration to Rust-owned SQLite.
-
-See [Rust Core Migration](rust-core-migration.md) for the current FastAPI-only `CoreClient` surface, migration checklist, and decommission gates.
+See [Rust Core Migration](rust-core-migration.md) for the full `CoreClient`
+surface and migration status.
