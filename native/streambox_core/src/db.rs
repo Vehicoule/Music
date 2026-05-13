@@ -463,17 +463,7 @@ fn migrate_to_v2(transaction: &rusqlite::Transaction<'_>) -> Result<(), CoreErro
 }
 
 fn migrate_to_v3(transaction: &rusqlite::Transaction<'_>) -> Result<(), CoreError> {
-    transaction
-        .execute_batch(
-            r#"
-            CREATE TABLE IF NOT EXISTS metadata_cache (
-                cache_key TEXT PRIMARY KEY,
-                payload TEXT NOT NULL,
-                updated_at INTEGER NOT NULL
-            );
-            "#,
-        )
-        .map_err(sql_error)
+    ensure_metadata_cache_schema(transaction)
 }
 
 fn migrate_to_v4(transaction: &rusqlite::Transaction<'_>) -> Result<(), CoreError> {
@@ -491,20 +481,86 @@ fn migrate_to_v5(transaction: &rusqlite::Transaction<'_>) -> Result<(), CoreErro
     ensure_source_index_schema(transaction).map(|_| ())
 }
 
-fn ensure_source_index_schema(
-    connection: &Connection,
-) -> Result<SourceIndexSchemaStatus, CoreError> {
+fn ensure_metadata_cache_schema(connection: &Connection) -> Result<(), CoreError> {
     connection
         .execute_batch(
             r#"
             CREATE TABLE IF NOT EXISTS metadata_cache (
                 cache_key TEXT PRIMARY KEY,
                 payload TEXT NOT NULL,
-                updated_at INTEGER NOT NULL
+                created_at INTEGER NOT NULL
             );
             "#,
         )
         .map_err(sql_error)?;
+
+    let columns = table_columns(connection, "metadata_cache")?;
+    let has_created_at = columns.iter().any(|column| column == "created_at");
+    let has_updated_at = columns.iter().any(|column| column == "updated_at");
+
+    if !has_created_at {
+        connection
+            .execute_batch(
+                r#"
+                ALTER TABLE metadata_cache
+                ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0;
+                "#,
+            )
+            .map_err(sql_error)?;
+    }
+
+    if has_updated_at {
+        connection
+            .execute(
+                "UPDATE metadata_cache SET created_at = updated_at WHERE created_at = 0",
+                [],
+            )
+            .map_err(sql_error)?;
+    }
+
+    Ok(())
+}
+
+fn set_metadata_cache_payload(
+    connection: &Connection,
+    cache_key: &str,
+    payload: &str,
+) -> Result<(), CoreError> {
+    let columns = table_columns(connection, "metadata_cache")?;
+    let has_updated_at = columns.iter().any(|column| column == "updated_at");
+
+    if has_updated_at {
+        connection
+            .execute(
+                "INSERT INTO metadata_cache(cache_key, payload, created_at, updated_at)
+                 VALUES (?, ?, strftime('%s', 'now'), strftime('%s', 'now'))
+                 ON CONFLICT(cache_key) DO UPDATE SET
+                    payload = excluded.payload,
+                    created_at = excluded.created_at,
+                    updated_at = excluded.updated_at",
+                params![cache_key, payload],
+            )
+            .map_err(sql_error)?;
+    } else {
+        connection
+            .execute(
+                "INSERT INTO metadata_cache(cache_key, payload, created_at)
+                 VALUES (?, ?, strftime('%s', 'now'))
+                 ON CONFLICT(cache_key) DO UPDATE SET
+                    payload = excluded.payload,
+                    created_at = excluded.created_at",
+                params![cache_key, payload],
+            )
+            .map_err(sql_error)?;
+    }
+
+    Ok(())
+}
+
+fn ensure_source_index_schema(
+    connection: &Connection,
+) -> Result<SourceIndexSchemaStatus, CoreError> {
+    ensure_metadata_cache_schema(connection)?;
 
     let rebuilt = source_index_needs_rebuild(connection)?;
     if rebuilt {
@@ -557,16 +613,11 @@ fn ensure_source_index_schema(
         )
         .map_err(sql_error)?;
 
-    connection
-        .execute(
-            "INSERT OR REPLACE INTO metadata_cache(cache_key, payload, updated_at)
-             VALUES (?, ?, strftime('%s', 'now'))",
-            params![
-                SOURCE_INDEX_SCHEMA_KEY,
-                format!("\"{SOURCE_INDEX_SCHEMA_VERSION}\"")
-            ],
-        )
-        .map_err(sql_error)?;
+    set_metadata_cache_payload(
+        connection,
+        SOURCE_INDEX_SCHEMA_KEY,
+        &format!("\"{SOURCE_INDEX_SCHEMA_VERSION}\""),
+    )?;
 
     Ok(SourceIndexSchemaStatus {
         schema_key: SOURCE_INDEX_SCHEMA_KEY.to_string(),
@@ -587,16 +638,20 @@ fn source_index_needs_rebuild(connection: &Connection) -> Result<bool, CoreError
         return Ok(false);
     }
 
-    let columns = connection
-        .prepare("PRAGMA table_info(source_index)")
+    let columns = table_columns(connection, "source_index")?;
+    Ok(!columns.iter().any(|column| column == "source_provider")
+        || !columns.iter().any(|column| column == "source_id")
+        || columns.iter().any(|column| column == "payload"))
+}
+
+fn table_columns(connection: &Connection, table_name: &str) -> Result<Vec<String>, CoreError> {
+    connection
+        .prepare(&format!("PRAGMA table_info({table_name})"))
         .map_err(sql_error)?
         .query_map([], |row| row.get::<_, String>(1))
         .map_err(sql_error)?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(sql_error)?;
-    Ok(!columns.iter().any(|column| column == "source_provider")
-        || !columns.iter().any(|column| column == "source_id")
-        || columns.iter().any(|column| column == "payload"))
+        .map_err(sql_error)
 }
 
 fn source_index_entries(connection: &Connection) -> Result<Vec<SourceIndexEntry>, CoreError> {
