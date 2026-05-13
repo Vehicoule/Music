@@ -21,7 +21,7 @@ Future<void> main() async {
   );
   const useRustLocalLibrary = bool.fromEnvironment(
     'USE_RUST_LOCAL_LIBRARY',
-    defaultValue: false,
+    defaultValue: true,
   );
 
   final apiClient = ApiClient(baseUrl: apiBaseUrl);
