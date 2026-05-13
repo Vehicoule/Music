@@ -34,7 +34,7 @@ abstract class CoreClient {
 
 class CoreClientRoutingConfig {
   const CoreClientRoutingConfig({
-    this.useRustLocalLibrary = false,
+    this.useRustLocalLibrary = true,
   });
 
   final bool useRustLocalLibrary;
@@ -73,31 +73,47 @@ class HybridCoreClient implements CoreClient {
 
   @override
   Future<DiscoverResponse> discover(String query, {String scope = 'all'}) {
-    return rustCoreClient?.discover(query, scope: scope) ??
-        apiClient.discover(query, scope: scope);
+    final rustClient = rustCoreClient;
+    if (rustClient == null) {
+      throw StateError('Rust core client not available — FastAPI backend has been removed');
+    }
+    return rustClient.discover(query, scope: scope);
   }
 
   @override
   Future<DiscoverResponse> discoverPlayable(String query) {
-    return rustCoreClient?.discoverPlayable(query) ??
-        apiClient.discoverPlayable(query);
+    final rustClient = rustCoreClient;
+    if (rustClient == null) {
+      throw StateError('Rust core client not available — FastAPI backend has been removed');
+    }
+    return rustClient.discoverPlayable(query);
   }
 
   @override
   Future<RuntimeDebug> runtimeDebug() {
-    return rustCoreClient?.runtimeDebug() ?? apiClient.runtimeDebug();
+    final rustClient = rustCoreClient;
+    if (rustClient == null) {
+      throw StateError('Rust core client not available — FastAPI backend has been removed');
+    }
+    return rustClient.runtimeDebug();
   }
 
   @override
   Future<AlbumDetail> albumDetail(String browseId) {
-    return rustCoreClient?.albumDetail(browseId) ??
-        apiClient.albumDetail(browseId);
+    final rustClient = rustCoreClient;
+    if (rustClient == null) {
+      throw StateError('Rust core client not available — FastAPI backend has been removed');
+    }
+    return rustClient.albumDetail(browseId);
   }
 
   @override
   Future<ArtistDetail> artistDetail(String browseId) {
-    return rustCoreClient?.artistDetail(browseId) ??
-        apiClient.artistDetail(browseId);
+    final rustClient = rustCoreClient;
+    if (rustClient == null) {
+      throw StateError('Rust core client not available — FastAPI backend has been removed');
+    }
+    return rustClient.artistDetail(browseId);
   }
 
   @override
@@ -106,17 +122,20 @@ class HybridCoreClient implements CoreClient {
     List<String> adapters = const [],
     String? sourceUrl,
   }) {
-    return rustCoreClient?.resolve(
-          track,
-          adapters: adapters,
-          sourceUrl: sourceUrl,
-        ) ??
-        apiClient.resolve(track, adapters: adapters, sourceUrl: sourceUrl);
+    final rustClient = rustCoreClient;
+    if (rustClient == null) {
+      throw StateError('Rust core client not available — FastAPI backend has been removed');
+    }
+    return rustClient.resolve(track, adapters: adapters, sourceUrl: sourceUrl);
   }
 
   @override
   Future<List<AdapterCapability>> sources() {
-    return rustCoreClient?.sources() ?? apiClient.sources();
+    final rustClient = rustCoreClient;
+    if (rustClient == null) {
+      throw StateError('Rust core client not available — FastAPI backend has been removed');
+    }
+    return rustClient.sources();
   }
 
   @override

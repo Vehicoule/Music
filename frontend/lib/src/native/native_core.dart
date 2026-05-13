@@ -140,6 +140,12 @@ abstract class NativeCore {
   Future<Map<String, dynamic>> sourceIndexUpsertJson(Map<String, dynamic> input);
   Future<Map<String, dynamic>> sourceIndexClearJson(Map<String, dynamic> input);
   Future<Map<String, dynamic>> sourceIndexRebuildJson(Map<String, dynamic> input);
+  Future<Map<String, dynamic>> discoverJson(Map<String, dynamic> input);
+  Future<Map<String, dynamic>> runtimeDebugJson(Map<String, dynamic> input);
+  Future<Map<String, dynamic>> sourcesJson(Map<String, dynamic> input);
+  Future<Map<String, dynamic>> ytdlpSearchJson(Map<String, dynamic> input);
+  Future<Map<String, dynamic>> ytdlpResolveJson(Map<String, dynamic> input);
+  Future<Map<String, dynamic>> ytdlpAvailableJson(Map<String, dynamic> input);
 }
 
 class StaticNativeCore implements NativeCore {
@@ -248,6 +254,36 @@ class StaticNativeCore implements NativeCore {
 
   @override
   Future<Map<String, dynamic>> sourceIndexRebuildJson(Map<String, dynamic> input) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> discoverJson(Map<String, dynamic> input) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> runtimeDebugJson(Map<String, dynamic> input) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> sourcesJson(Map<String, dynamic> input) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> ytdlpSearchJson(Map<String, dynamic> input) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> ytdlpResolveJson(Map<String, dynamic> input) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> ytdlpAvailableJson(Map<String, dynamic> input) async {
     return _unsupported();
   }
 
@@ -451,6 +487,60 @@ class FfiNativeCore implements NativeCore {
     return _callJson(
       _openLibrary(),
       'streambox_source_index_rebuild_json',
+      input,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> discoverJson(Map<String, dynamic> input) async {
+    return _callJson(
+      _openLibrary(),
+      'streambox_discover_json',
+      input,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> runtimeDebugJson(Map<String, dynamic> input) async {
+    return _callJson(
+      _openLibrary(),
+      'streambox_runtime_debug_json',
+      input,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> sourcesJson(Map<String, dynamic> input) async {
+    return _callJson(
+      _openLibrary(),
+      'streambox_sources_json',
+      input,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> ytdlpSearchJson(Map<String, dynamic> input) async {
+    return _callJson(
+      _openLibrary(),
+      'streambox_ytdlp_search_json',
+      input,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> ytdlpResolveJson(Map<String, dynamic> input) async {
+    return _callJson(
+      _openLibrary(),
+      'streambox_ytdlp_resolve_json',
+      input,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> ytdlpAvailableJson(Map<String, dynamic> input) async {
+    return _callJson(
+      _openLibrary(),
+      'streambox_ytdlp_available_json',
       input,
     );
   }

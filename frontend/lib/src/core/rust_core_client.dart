@@ -1,4 +1,3 @@
-import '../api_client.dart';
 import '../models.dart';
 import '../native/native_core.dart';
 import 'core_client.dart';
@@ -6,13 +5,11 @@ import 'core_client.dart';
 class RustCoreClient implements CoreClient {
   const RustCoreClient({
     required this.nativeCore,
-    required this.fallbackApiClient,
     String? dbPath,
     String? databasePath,
   }) : dbPath = dbPath ?? databasePath;
 
   final NativeCore nativeCore;
-  final ApiClient fallbackApiClient;
   final String? dbPath;
 
   String get databasePath => dbPath ?? defaultRustDatabasePath;
@@ -23,105 +20,100 @@ class RustCoreClient implements CoreClient {
 
   @override
   Future<DiscoverResponse> discover(String query, {String scope = 'all'}) async {
-    final cached = await _discoverFromSourceIndex(query, scope: scope);
-    if (cached != null) {
-      return cached;
-    }
-    final response = await fallbackApiClient.discover(query, scope: scope);
-    await _cacheSourceIndexItems(response.items);
-    return response;
-  }
-
-  @override
-  Future<DiscoverResponse> discoverPlayable(String query) {
-    return fallbackApiClient.discoverPlayable(query);
-  }
-
-  Future<DiscoverResponse?> _discoverFromSourceIndex(
-    String query, {
-    required String scope,
-  }) async {
-    if (!_sourceIndexCacheableScope(scope)) {
-      return null;
-    }
-
-    late final Map<String, dynamic> response;
-    try {
-      response = await nativeCore.sourceIndexSearchJson({
-        'database_path': dbPath,
-        'query': query,
-        'scope': scope,
-        'limit': 12,
-      });
-    } catch (_) {
-      return null;
-    }
-    dynamic payload;
-    try {
-      payload = _unwrapJsonProtocol(response);
-    } catch (_) {
-      return null;
-    }
-    final data = payload as List<dynamic>;
-    if (data.isEmpty) {
-      return null;
-    }
-    final entries = data
+    // Use the Rust discovery orchestrator (source index -> yt-dlp -> MusicBrainz)
+    final response = await nativeCore.discoverJson({
+      if (dbPath != null) 'database_path': dbPath,
+      'query': query,
+      'limit': 12,
+    });
+    final payload = _unwrapJsonProtocol(response);
+    final data = payload as Map<String, dynamic>;
+    final rawItems = (data['items'] as List<dynamic>)
         .map((item) => item as Map<String, dynamic>)
         .toList();
-    final bestScore =
-        (entries.first['confidence_score'] as num?)?.toDouble() ?? 0;
-    if (bestScore < 90) {
-      return null;
-    }
-    return DiscoverResponse.fromJson({
-      'query': query,
-      'mode': 'stream',
-      'scope': scope,
-      'items': entries.map(_sourceIndexDiscoverItemJson).toList(),
-      'warnings': const [],
-    });
-  }
-
-  bool _sourceIndexCacheableScope(String scope) {
-    switch (scope.toLowerCase()) {
-      case 'songs':
-      case 'videos':
-        return true;
-      default:
-        return false;
-    }
-  }
-
-  Future<void> _cacheSourceIndexItems(List<DiscoverItem> items) async {
-    final entries = items
-        .map(_sourceIndexEntryJson)
-        .whereType<Map<String, dynamic>>()
+    final items = rawItems.map(_rustDiscoverResultToItem).toList();
+    final warnings = (data['warnings'] as List<dynamic>)
+        .map((item) => DiscoverWarning(
+              code: 'rust_discovery',
+              message: item as String? ?? '',
+            ))
         .toList();
-    if (entries.isEmpty) {
-      return;
-    }
-    try {
-      await nativeCore.sourceIndexUpsertJson({
-        'database_path': dbPath,
-        'entries': entries,
-      });
-    } catch (_) {
-      // Source-index writes are opportunistic; network discovery remains authoritative.
-    }
+    return DiscoverResponse(
+      query: query,
+      mode: 'stream',
+      scope: scope,
+      items: items,
+      warnings: warnings,
+    );
   }
 
   @override
-  Future<RuntimeDebug> runtimeDebug() => fallbackApiClient.runtimeDebug();
-
-  @override
-  Future<AlbumDetail> albumDetail(String browseId) {
-    return fallbackApiClient.albumDetail(browseId);
+  Future<DiscoverResponse> discoverPlayable(String query) async {
+    // yt-dlp search returns playable results directly
+    final response = await nativeCore.ytdlpSearchJson({
+      'query': query,
+      'limit': 15,
+    });
+    final tracks = _unwrapJsonProtocol(response) as List<dynamic>;
+    final items = tracks
+        .map((track) => _ytdlpTrackToDiscoverItem(track as Map<String, dynamic>))
+        .toList();
+    return DiscoverResponse(
+      query: query,
+      mode: 'stream',
+      scope: 'all',
+      items: items,
+      warnings: const [],
+    );
   }
 
   @override
-  Future<ArtistDetail> artistDetail(String browseId) {
-    return fallbackApiClient.artistDetail(browseId);
+  Future<RuntimeDebug> runtimeDebug() async {
+    final response = await nativeCore.runtimeDebugJson({});
+    final data = _unwrapJsonProtocol(response) as Map<String, dynamic>;
+    return RuntimeDebug(
+      apiVersion: data['api_version'] as String? ?? '',
+      ytdlpAvailable: data['ytdlp_available'] as bool? ?? false,
+      ytdlpPath: '',
+    );
+  }
+
+  @override
+  Future<AlbumDetail> albumDetail(String browseId) async {
+    // Resolve the browse URL through yt-dlp to get album track details
+    final response = await nativeCore.ytdlpResolveJson({
+      'url': browseId,
+    });
+    final track = _unwrapJsonProtocol(response) as Map<String, dynamic>;
+    final discoverItem = _ytdlpTrackToDiscoverItem(track);
+    final title = track['title'] as String? ?? '';
+    final uploader = track['uploader'] as String? ?? '';
+    return AlbumDetail(
+      title: title,
+      artists: uploader.isNotEmpty
+          ? [ArtistMetadata(name: uploader)]
+          : const [],
+      browseId: browseId,
+      artworkUrl: track['thumbnail'] as String?,
+      tracks: [discoverItem],
+    );
+  }
+
+  @override
+  Future<ArtistDetail> artistDetail(String browseId) async {
+    // Resolve the browse URL through yt-dlp to get artist details
+    final response = await nativeCore.ytdlpResolveJson({
+      'url': browseId,
+    });
+    final track = _unwrapJsonProtocol(response) as Map<String, dynamic>;
+    final title = track['title'] as String? ?? '';
+    final uploader = track['uploader'] as String? ?? '';
+    return ArtistDetail(
+      name: uploader.isNotEmpty ? uploader : title,
+      browseId: browseId,
+      artworkUrl: track['thumbnail'] as String?,
+      sections: const [],
+    );
   }
 
   @override
@@ -129,16 +121,41 @@ class RustCoreClient implements CoreClient {
     TrackMetadata track, {
     List<String> adapters = const [],
     String? sourceUrl,
-  }) {
-    return fallbackApiClient.resolve(
-      track,
-      adapters: adapters,
-      sourceUrl: sourceUrl,
+  }) async {
+    final url = sourceUrl ??
+        track.sourceUrl ??
+        (track.album?.id != null ? 'https://music.youtube.com/browse/${track.album!.id}' : '');
+    if (url.isEmpty) {
+      throw const RustCoreException('No source URL available for resolution');
+    }
+    final response = await nativeCore.ytdlpResolveJson({
+      'url': url,
+    });
+    final data = _unwrapJsonProtocol(response) as Map<String, dynamic>;
+    final candidate = SourceCandidate(
+      adapter: 'ytdlp',
+      url: data['url'] as String? ?? url,
+      title: data['title'] as String? ?? track.title,
+      sourceProvider: 'youtube',
+      sourceId: data['id'] as String?,
+      sourceUrl: data['webpage_url'] as String? ?? url,
+      sourceKind: 'song',
+      durationSeconds: (data['duration_seconds'] as num?)?.toDouble(),
+    );
+    return ResolveResponse(
+      candidates: [candidate],
+      warnings: const [],
     );
   }
 
   @override
-  Future<List<AdapterCapability>> sources() => fallbackApiClient.sources();
+  Future<List<AdapterCapability>> sources() async {
+    final response = await nativeCore.sourcesJson({});
+    final data = _unwrapJsonProtocol(response) as List<dynamic>;
+    return data
+        .map((item) => AdapterCapability.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
 
   @override
   Future<List<Playlist>> playlists() async {
@@ -257,6 +274,56 @@ class RustCoreClient implements CoreClient {
     }
   }
 
+  DiscoverItem _ytdlpTrackToDiscoverItem(Map<String, dynamic> track) {
+    final id = track['id'] as String? ?? '';
+    final title = track['title'] as String? ?? '';
+    final url = track['url'] as String? ?? '';
+    final webpageUrl = track['webpage_url'] as String? ?? url;
+    final uploader = track['uploader'] as String? ?? '';
+    final duration = (track['duration_seconds'] as num?)?.toDouble();
+    final thumbnail = track['thumbnail'] as String?;
+
+    return DiscoverItem(
+      id: 'youtube:$id',
+      mode: 'stream',
+      kind: 'song',
+      label: 'YouTube Music',
+      track: TrackMetadata(
+        id: 'youtube:$id',
+        title: title,
+        artists: uploader.isNotEmpty
+            ? [ArtistMetadata(name: uploader)]
+            : [const ArtistMetadata(name: 'YouTube')],
+        lengthMs: duration != null ? (duration * 1000).round() : null,
+        artworkUrl: thumbnail,
+        sourceProvider: 'youtube',
+        sourceId: id,
+        sourceUrl: webpageUrl,
+        sourceKind: 'song',
+        source: 'youtube',
+      ),
+    );
+  }
+
+  DiscoverItem _rustDiscoverResultToItem(Map<String, dynamic> result) {
+    // Rust DiscoverResult JSON has {mode, kind, label, track { ... }}
+    // Map to DiscoverItem format expected by Flutter
+    final mode = result['mode'] as String? ?? 'stream';
+    final kind = result['kind'] as String? ?? 'song';
+    final label = result['label'] as String?;
+    final trackJson = result['track'] as Map<String, dynamic>?;
+    final track = trackJson != null
+        ? TrackMetadata.fromJson(trackJson)
+        : null;
+    return DiscoverItem(
+      id: track?.id ?? '',
+      mode: mode,
+      kind: kind,
+      track: track,
+      label: label,
+    );
+  }
+
   dynamic _unwrapJsonProtocol(Map<String, dynamic> response) {
     if (response['ok'] == true) {
       return response['data'];
@@ -269,97 +336,6 @@ class RustCoreClient implements CoreClient {
     }
     throw StateError('native_error: invalid native response');
   }
-}
-
-Map<String, dynamic> _sourceIndexDiscoverItemJson(Map<String, dynamic> entry) {
-  final sourceProvider = entry['source_provider'] as String? ?? '';
-  final sourceId = entry['source_id'] as String? ?? '';
-  final sourceKind = entry['source_kind'] as String? ?? '';
-  final sourceUrl = entry['source_url'] as String? ?? '';
-  final durationSeconds = (entry['duration_seconds'] as num?)?.toDouble();
-  return {
-    'id': '$sourceProvider:$sourceId',
-    'mode': 'stream',
-    'kind': sourceKind == 'video' ? 'video' : 'song',
-    'label': 'Source index',
-    'track': {
-      'id': '$sourceProvider:$sourceId',
-      'title': entry['title'],
-      'artists': [
-        {
-          'name': (entry['artist'] as String?)?.isNotEmpty == true
-              ? entry['artist']
-              : sourceProvider,
-        },
-      ],
-      if ((entry['album'] as String?)?.isNotEmpty == true)
-        'album': {'title': entry['album']},
-      if (durationSeconds != null)
-        'length_ms': (durationSeconds * 1000).round(),
-      'confidence_score': entry['confidence_score'],
-      'rank_reason': entry['rank_reason'],
-      'artwork_url': entry['artwork_url'],
-      'source_provider': sourceProvider,
-      'source_id': sourceId,
-      'source_url': sourceUrl,
-      'source_kind': sourceKind,
-      'raw_title': entry['raw_title'],
-      'canonical_title': entry['canonical_title'],
-      'canonical_artist': entry['canonical_artist'],
-      'parse_source': entry['parse_source'],
-      'source': sourceProvider,
-    },
-    // Cached source-index hits contain discovery metadata only. Do not attach
-    // a SourceCandidate here: source_url is the provider page that must still
-    // be resolved by the backend before playback.
-  };
-}
-
-Map<String, dynamic>? _sourceIndexEntryJson(DiscoverItem item) {
-  final source = item.source;
-  final track = item.track;
-  final sourceProvider = source?.sourceProvider ?? track?.sourceProvider;
-  final sourceId = source?.sourceId ?? track?.sourceId;
-  final sourceUrl = source?.sourceUrl ?? track?.sourceUrl;
-  if (sourceProvider == null || sourceId == null || sourceUrl == null) {
-    return null;
-  }
-  return {
-    'source_provider': sourceProvider,
-    'source_id': sourceId,
-    'source_url': sourceUrl,
-    'title': source?.canonicalTitle ??
-        track?.canonicalTitle ??
-        track?.title ??
-        source?.title ??
-        '',
-    'artist': source?.canonicalArtist ??
-        track?.canonicalArtist ??
-        track?.artistLabel ??
-        '',
-    'album': source?.albumTitle ?? track?.album?.title ?? '',
-    'duration_seconds': source?.durationSeconds ??
-        (track?.lengthMs == null ? null : track!.lengthMs! / 1000),
-    'confidence_score': source?.confidenceScore ?? track?.confidenceScore ?? 0,
-    'rank_reason': source?.rankReason ?? track?.rankReason ?? '',
-    'artwork_url': source?.artworkUrl ?? track?.artworkUrl ?? '',
-    'source_kind': source?.sourceKind ?? track?.sourceKind ?? item.kind,
-    'raw_title': source?.rawTitle ??
-        track?.rawTitle ??
-        source?.title ??
-        track?.title ??
-        '',
-    'canonical_title': source?.canonicalTitle ??
-        track?.canonicalTitle ??
-        track?.title ??
-        source?.title ??
-        '',
-    'canonical_artist': source?.canonicalArtist ??
-        track?.canonicalArtist ??
-        track?.artistLabel ??
-        '',
-    'parse_source': source?.parseSource ?? track?.parseSource ?? 'structured',
-  };
 }
 
 class RustCoreException implements Exception {

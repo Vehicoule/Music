@@ -14,8 +14,10 @@ use crate::models::{
     HistoryClearRequest, HistoryListRequest, MusicBrainzSearchRequest, SourceIndexClearRequest,
     SourceIndexRebuildRequest, SourceIndexSearchRequest, SourceIndexUpsertRequest,
 };
+use crate::services::discovery;
 use crate::services::musicbrainz::MusicBrainzClient;
 use crate::services::ytdlp;
+use crate::CORE_API_VERSION;
 use crate::{favorites, health_json, history, platform_info, playlists, version};
 
 #[derive(Debug, Deserialize)]
@@ -36,6 +38,32 @@ fn default_search_limit() -> usize {
 #[derive(Debug, Deserialize)]
 struct YtDlpResolveRequest {
     url: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct DiscoverRequest {
+    database_path: Option<String>,
+    query: String,
+    #[serde(default = "default_discover_limit")]
+    limit: usize,
+}
+fn default_discover_limit() -> usize {
+    12
+}
+
+#[derive(Debug, Serialize)]
+struct RuntimeDebugResponse {
+    api_version: String,
+    ytdlp_available: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct SourceCapability {
+    name: String,
+    enabled: bool,
+    healthy: bool,
+    label: String,
+    notes: Option<String>,
 }
 
 #[no_mangle]
@@ -321,6 +349,61 @@ pub unsafe extern "C" fn streambox_ytdlp_available_json(input_json: *const c_cha
     let _ = input_json;
     let available = ytdlp::is_available();
     ok_json(json!({ "available": available }))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn streambox_discover_json(input_json: *const c_char) -> *mut c_char {
+    match read_json::<DiscoverRequest>(input_json) {
+        Ok(request) => {
+            let database_path = request
+                .database_path
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(default_database_path);
+            match discovery::discover(&database_path, &request.query, request.limit) {
+                Ok((items, warnings)) => ok_json(json!({
+                    "items": items,
+                    "warnings": warnings,
+                })),
+                Err(error) => error_json(error),
+            }
+        }
+        Err(error) => error_json(error),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn streambox_runtime_debug_json(_input_json: *const c_char) -> *mut c_char {
+    let response = RuntimeDebugResponse {
+        api_version: CORE_API_VERSION.to_string(),
+        ytdlp_available: ytdlp::is_available(),
+    };
+    ok_json(response)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn streambox_sources_json(_input_json: *const c_char) -> *mut c_char {
+    let ytdlp_available = ytdlp::is_available();
+    let sources = vec![
+        SourceCapability {
+            name: "ytdlp".to_string(),
+            enabled: true,
+            healthy: ytdlp_available,
+            label: "yt-dlp".to_string(),
+            notes: if ytdlp_available {
+                None
+            } else {
+                Some("yt-dlp binary not found on PATH".to_string())
+            },
+        },
+        SourceCapability {
+            name: "musicbrainz".to_string(),
+            enabled: true,
+            healthy: true,
+            label: "MusicBrainz".to_string(),
+            notes: None,
+        },
+    ];
+    ok_json(sources)
 }
 
 #[no_mangle]

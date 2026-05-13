@@ -1,2 +1,0 @@
-"""Streaming music player backend."""
-

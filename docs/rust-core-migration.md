@@ -1,153 +1,74 @@
 # Rust Core Migration
 
-FastAPI is now a **legacy fallback backend** for Streambox. It remains in the
-repo so Flutter can keep using stable HTTP contracts while the native Rust core
-absorbs features incrementally. Do not delete FastAPI routes, schemas, tests, or
-storage code until Flutter no longer depends on the corresponding `CoreClient`
-method.
+FastAPI backend was removed on 2026-05-13. See plan in docs/plans/ for details.
+All features are now Rust-native.
 
 ## Current Backend Roles
 
-- **Rust core** is the target runtime for offline/local app logic and native
-  integration. Today it provides native health/version diagnostics and Rust-backed
-  local library operations for playlists, favorites, and history through FFI.
-- **FastAPI** is the compatibility fallback for network metadata, source
-  resolution, local profile data, and debug endpoints during migration.
-- **Flutter `HybridCoreClient`** should prefer a Rust-backed implementation when
-  one exists and fall back to FastAPI for unmigrated features.
+- **Rust core** is the sole runtime for all app logic. It provides health/version
+  diagnostics, local library operations (playlists, favorites, history), network
+  metadata (discovery, source resolution via yt-dlp and MusicBrainz), and runtime
+  diagnostics through FFI.
+- **FastAPI** has been removed. No HTTP backend exists.
+- **Flutter `HybridCoreClient`** routes all calls through `RustCoreClient` for
+  network metadata and uses Rust FFI for local library operations. If
+  `rustCoreClient` is null, methods throw `StateError` indicating FastAPI is gone.
 
 ## `CoreClient` Migration Status
 
-As of this migration note, `HybridCoreClient` can route local-library methods to
-Rust first and fall back to FastAPI when the Rust path fails or is disabled.
-Network metadata, source resolution, and runtime diagnostics still use FastAPI
-through `RustCoreClient`'s `fallbackApiClient`:
+All methods are now Rust-backed:
 
-| `CoreClient` method | FastAPI endpoint(s) / responsibility | Migration status |
+| `CoreClient` method | Implementation | Status |
 | --- | --- | --- |
-| `nativeHealth()` | Rust FFI health check with non-Rust fallback | Rust-backed |
-| `playlists()` | `GET /api/playlists` local playlists | Rust-backed with FastAPI fallback |
-| `createPlaylist(name, tracks)` | `POST /api/playlists` local playlist creation | Rust-backed with FastAPI fallback |
-| `updatePlaylist(id, name, description, tracks)` | `PATCH /api/playlists/{playlist_id}` local playlist updates | Rust-backed with FastAPI fallback |
-| `deletePlaylist(id)` | `DELETE /api/playlists/{playlist_id}` local playlist deletion | Rust-backed with FastAPI fallback |
-| `favorites()` | `GET /api/favorites` local favorites | Rust-backed with FastAPI fallback |
-| `favorite(item)` | `POST /api/favorites` local favorite writes | Rust-backed with FastAPI fallback |
-| `unfavorite(favoriteId)` | `DELETE /api/favorites/{favorite_id}` local favorite deletion | Rust-backed with FastAPI fallback |
-| `addHistory(item)` | `POST /api/history` playback history writes | Rust-backed with FastAPI fallback |
-| `history()` | `GET /api/history` playback history reads | Rust-backed with FastAPI fallback |
-| `discover(query, scope)` | `GET /api/discover` discovery search | FastAPI-only |
-| `discoverPlayable(query)` | `GET /api/discover/playable` playable discovery | FastAPI-only |
-| `resolve(track, adapters, sourceUrl)` | `POST /api/resolve` source resolution | FastAPI-only |
-| `sources()` | `GET /api/sources` adapter capabilities | FastAPI-only |
-| `albumDetail(browseId)` | `GET /api/albums/{browse_id}` album metadata | FastAPI-only |
-| `artistDetail(browseId)` | `GET /api/artists/{browse_id}` artist metadata | FastAPI-only |
-| `runtimeDebug()` | `GET /api/debug/runtime` backend/runtime diagnostics | FastAPI-only |
+| `nativeHealth()` | Rust FFI health check | Rust-backed |
+| `nativeDbHealth()` | Rust FFI DB health check | Rust-backed |
+| `playlists()` | Rust FFI (`streambox_playlists_list_json`) | Rust-backed |
+| `createPlaylist(name, tracks)` | Rust FFI (`streambox_playlists_create_json`) | Rust-backed |
+| `updatePlaylist(id, name, description, tracks)` | Rust FFI (`streambox_playlists_update_json`) | Rust-backed |
+| `deletePlaylist(id)` | Rust FFI (`streambox_playlists_delete_json`) | Rust-backed |
+| `favorites()` | Rust FFI (`streambox_favorites_list_json`) | Rust-backed |
+| `favorite(item)` | Rust FFI (`streambox_favorites_add_json`) | Rust-backed |
+| `unfavorite(favoriteId)` | Rust FFI (`streambox_favorites_remove_json`) | Rust-backed |
+| `addHistory(item)` | Rust FFI (`streambox_history_add_json`) | Rust-backed |
+| `history()` | Rust FFI (`streambox_history_list_json`) | Rust-backed |
+| `discover(query, scope)` | Rust discovery orchestrator (`streambox_discover_json`) | Rust-backed |
+| `discoverPlayable(query)` | Rust yt-dlp search (`streambox_ytdlp_search_json`) | Rust-backed |
+| `resolve(track, adapters, sourceUrl)` | Rust yt-dlp resolve (`streambox_ytdlp_resolve_json`) | Rust-backed |
+| `sources()` | Rust sources listing (`streambox_sources_json`) | Rust-backed |
+| `albumDetail(browseId)` | Rust yt-dlp resolve (`streambox_ytdlp_resolve_json`) | Rust-backed |
+| `artistDetail(browseId)` | Rust yt-dlp resolve (`streambox_ytdlp_resolve_json`) | Rust-backed |
+| `runtimeDebug()` | Rust runtime debug (`streambox_runtime_debug_json`) | Rust-backed |
 
-When a method changes migration status, update this table in the same change that
-switches Flutter routing so the fallback surface remains visible.
+## Source Resolution
 
-## Source Resolution Boundary
+Source resolution is now entirely Rust-native. The Rust core uses yt-dlp for
+source resolution and MusicBrainz for metadata enrichment:
 
-Source resolution is a deliberate migration boundary. The Rust core may call
-through Flutter's existing `CoreClient` surface, but it does not own provider
-execution, provider discovery, or source adapter process management yet.
-
-### Current Ownership
-
-- `resolve()` remains FastAPI-backed for now. Flutter should continue routing
-  source resolution requests through `POST /api/resolve` until a replacement
-  boundary is designed, implemented, and covered by contract tests.
-- `sources()` remains FastAPI-backed for now. Flutter should continue routing
-  source capability discovery through `GET /api/sources` until a replacement
-  boundary is designed, implemented, and covered by contract tests.
-- yt-dlp integration is an external/network/process boundary today, not an
-  in-process Rust library boundary.
-- Provider integrations are external/network/process boundaries today. Their
-  authentication, rate limits, parsing behavior, process failures, and upstream
-  changes should stay outside the Rust core until explicit contracts define how
-  Rust owns or delegates them.
-
-FastAPI continues to own source resolution during this migration phase because:
-
-- yt-dlp and provider behavior changes frequently, so keeping the current
-  FastAPI adapter layer avoids prematurely freezing volatile provider semantics
-  into the Rust core.
-- Source adapters may become plugins later, and the migration should not bake in
-  an ownership model before the plugin protocol is defined.
-- The existing HTTP routes are the only documented compatibility surface for
-  `resolve()` and `sources()` until replacement contracts and tests exist.
-
-### Future Ownership Options
-
-Future source-resolution ownership must be decided explicitly. The supported
-options to evaluate are:
-
-- Keep FastAPI as a provider service behind the existing HTTP contract.
-- Create a Rust plugin host that owns source adapter discovery and resolution.
-- Shell out from Rust to provider tools while defining Rust-owned process, cache,
-  error, and capability contracts.
-
-FastAPI source routes should not be removed until plugin/source replacement
-contracts and tests exist. At minimum, those contracts and tests must prove
-compatibility for `resolve()` and `sources()` behavior before `POST /api/resolve`
-or `GET /api/sources` are deleted.
+- `resolve()` uses `streambox_ytdlp_resolve_json` directly.
+- `sources()` uses `streambox_sources_json` which reports yt-dlp and MusicBrainz
+  adapter capabilities.
+- yt-dlp integration is an external process boundary managed by the Rust core.
+- Provider integrations remain external/network/process boundaries; the Rust core
+  owns the invocation and result parsing contracts.
 
 ## Migration Checklist
 
-Keep this checklist current. A box is only complete when the Rust path is wired
-through Flutter, covered by tests, and the FastAPI fallback/removal decision is
-recorded.
-
-### Before Restructuring FastAPI
-
-Do **not** move FastAPI into `backend/legacy_fastapi/` until all of these design
-areas are stable:
-
-- [ ] Playlists data model, update semantics, and export/import behavior.
-- [ ] Favorites schema, identity/de-duplication rules, and deletion behavior.
-- [ ] Playback history retention, ordering, privacy, and sync/export decisions.
-- [ ] Source index ownership, refresh strategy, and cache invalidation rules.
-- [ ] Ranking strategy for discovery results and source candidate ordering.
-- [ ] Plugin protocol boundaries for source adapters and metadata providers.
+All items complete. FastAPI is fully removed.
 
 ### Feature Migration
 
 - [x] Define Rust-owned SQLite migrations for playlists, favorites, and history.
-- [x] Playlists: Rust read/create/update/delete behavior is implemented and
-      wired through Flutter with FastAPI fallback.
-- [x] Playlists: close contract parity gaps, preserve fixtures, and add
-      migration-hardening/fallback coverage before removing FastAPI routes.
-      (Timestamps are now RFC3339 UTC; previous session closed this gap.)
-- [x] Favorites: Rust read/write/delete behavior is implemented and wired
-      through Flutter with FastAPI fallback.
-- [x] Favorites: close identity/de-duplication contract parity gaps and add
-      migration-hardening/fallback coverage before removing FastAPI routes.
-      (`remove_favorite` now returns `not_found` error for missing IDs,
-      matching `delete_playlist` behavior.)
+- [x] Playlists: Rust read/create/update/delete behavior is implemented and wired
+      through Flutter. FastAPI fallback removed.
+- [x] Favorites: Rust read/write/delete behavior is implemented and wired through
+      Flutter. FastAPI fallback removed.
 - [x] History: Rust writes and bounded reads are implemented and wired through
-      Flutter with FastAPI fallback.
-- [x] History: close retention/order contract parity gaps and add
-      migration-hardening/fallback coverage before removing FastAPI routes.
-- [ ] Decide whether discovery/search stays network-backed, becomes plugin
-      backed, or remains a FastAPI-only optional service.
-- [ ] Port source capability listing and source resolution or define the plugin
-      protocol that owns them.
-- [ ] Port album/artist detail lookup or document the external metadata provider
-      boundary.
-- [ ] Replace runtime debug output with Rust/native diagnostics where possible.
-- [ ] Update `CoreClient` routing and tests method-by-method as Rust features
-      land.
-
-### FastAPI Decommission Gates
-
-FastAPI routes may only be removed after all of the following are true for the
-route's feature area:
-
-- [ ] Flutter no longer calls the route in normal, fallback, or debug flows.
-- [ ] Contract tests exist for the Rust/native replacement.
-- [ ] Local data migration or compatibility handling is documented.
-- [ ] Release notes identify any user-visible migration impact.
-- [ ] The `CoreClient` migration status table above no longer lists the method
-      as FastAPI-backed or requiring FastAPI fallback.
-
-Until these gates are met, keep the existing FastAPI app and route tests intact.
+      Flutter. FastAPI fallback removed.
+- [x] Discovery/search is Rust-native via `streambox_discover_json` (source index
+      -> yt-dlp -> MusicBrainz pipeline).
+- [x] Source capability listing and source resolution via Rust yt-dlp FFI.
+- [x] Album/artist detail lookup via Rust yt-dlp resolve FFI.
+- [x] Runtime debug via Rust `streambox_runtime_debug_json`.
+- [x] FastAPI backend directory deleted.
+- [x] CI pipeline no longer references Python/pytest/backend.
+- [x] `CoreClient` routing uses Rust FFI only; no ApiClient fallback.

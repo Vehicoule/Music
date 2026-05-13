@@ -1,2 +1,0 @@
-"""Playable source adapters."""
-
