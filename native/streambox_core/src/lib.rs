@@ -10,7 +10,7 @@ pub mod services;
 pub use models::{CoreHealth, HealthJson, PlatformInfo};
 
 pub const CORE_VERSION: &str = "streambox-core 0.1.0";
-pub const CORE_API_VERSION: &str = "0.1.0";
+pub const CORE_API_VERSION: &str = "0.3.0";
 
 pub fn version() -> &'static str {
     CORE_VERSION
