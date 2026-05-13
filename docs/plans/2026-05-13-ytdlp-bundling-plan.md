@@ -1,208 +1,196 @@
-# yt-dlp Multi-Platform Plan — Final
-## 2026-05-13
+# Multi-Engine Streaming Plan
+## 2026-05-13 — adapted from Spotube's proven architecture
 
-Based on [Spotube](https://github.com/krtirtho/spotube)'s proven approach:
-yt-dlp on desktop, NewPipe Extractor on Android.
-
-## Strategy
-
-| Platform | Engine | How |
-|----------|--------|-----|
-| Windows  | yt-dlp | `yt_dlp_dart` Dart package (wraps yt-dlp binary) |
-| macOS    | yt-dlp | same |
-| Linux    | yt-dlp | same |
-| Android  | NewPipe Extractor | `flutter_new_pipe_extractor` plugin |
-| iOS      | NewPipe Extractor | same (if we add iOS later) |
-
-Both engines implement the same Dart interface — Flutter picks one at startup
-based on `Platform.isAndroid`.
-
-## Why NewPipe on Android instead of Chaquopy + Python
-
-NewPipe Extractor is a Java library purpose-built for Android:
-- No Python runtime needed (~30 MB saved vs Chaquopy)
-- No subprocess restrictions (native Java, runs in-process)
-- Maintained by [TeamNewPipe](https://github.com/TeamNewPipe/NewPipeExtractor)
-  (30K+ GitHub stars, active since 2015)
-- Supports YouTube, YouTube Music, SoundCloud, Bandcamp, PeerTube
-- `flutter_new_pipe_extractor` wraps it for Flutter
+Based on [Spotube](https://github.com/krtirtho/spotube)'s 3-engine approach.
 
 ## Architecture
 
 ```
-┌────────────────────────────────────────────┐
-│              Flutter (Dart)                 │
-│                                             │
-│  abstract class TrackResolver {             │
-│    Future<List<Track>> search(q)            │
-│    Future<StreamUrl> resolve(track)         │
-│  }                                         │
-│                                             │
-│  ┌──────────────────┐  ┌─────────────────┐ │
-│  │ YtDlpResolver    │  │ NewPipeResolver │ │
-│  │ (desktop)        │  │ (mobile)        │ │
-│  │ uses yt_dlp_dart │  │ uses flutter_   │ │
-│  │ → subprocess     │  │ new_pipe_extr.  │ │
-│  └──────────────────┘  └─────────────────┘ │
-└────────────────────────────────────────────┘
+abstract interface class TrackResolver {
+  Future<List<Track>> search(String query);
+  Future<SourceCandidate> resolve(String urlOrId);
+}
+
+     ┌─────────────────┐
+     │  TrackResolver   │
+     └────────┬────────┘
+              │
+   ┌──────────┼──────────┐
+   │          │          │
+   ▼          ▼          ▼
+YtDlpEngine  NewPipe    YouTubeExplode
+(desktop)    (mobile)   (fallback)
+
+Rust FFI     flutter_   youtube_explode
+→ yt-dlp     newpipe_   _dart
+             extractor   (pure Dart)
 ```
 
-## Phase 1: Desktop — yt-dlp via yt_dlp_dart
+## Engines
 
-### Task 1: Add yt_dlp_dart dependency
+### 1. YtDlpEngine — Desktop (Rust FFI)
 
-**File:** `frontend/pubspec.yaml`
-
-```yaml
-dependencies:
-  yt_dlp_dart: ^1.1.0
-```
-
-Run `flutter pub get`.
-
-### Task 2: Create YtDlpResolver
-
-**File:** `frontend/lib/src/resolver/yt_dlp_resolver.dart`
+Already built. Our `streambox_ytdlp_search_json` / `streambox_ytdlp_resolve_json`
+FFI endpoints. Wraps them in the `TrackResolver` interface.
 
 ```dart
-import 'package:yt_dlp_dart/yt_dlp_dart.dart';
-
-class YtDlpResolver implements TrackResolver {
-  static Future<bool> isAvailable() async =>
-      await YtDlp.instance.checkAvailableInPath();
+class YtDlpEngine implements TrackResolver {
+  static bool get isAvailable => Platform.isWindows ||
+      Platform.isMacOS || Platform.isLinux;
 
   @override
-  Future<List<TrackMetadata>> search(String query, {int limit = 10}) async {
-    final output = await YtDlp.instance.extractInfoString(
-      'ytsearch$limit:$query',
-      extraArgs: ['--flat-playlist', '--no-playlist', '--quiet'],
-    );
-    // Parse JSON lines → List<TrackMetadata>
+  Future<List<DiscoverItem>> search(String query) async {
+    final response = await nativeCore.ytdlpSearchJson({
+      'query': query, 'limit': 15,
+    });
+    // parse → List<DiscoverItem>
   }
 
   @override
   Future<SourceCandidate> resolve(String url) async {
-    final info = await YtDlp.instance.extractInfo(
-      url,
-      extraArgs: ['--format', 'bestaudio/best', '--quiet'],
-    ) as Map<String, dynamic>;
-    return SourceCandidate(
-      adapter: 'ytdlp',
-      url: info['url'],
-      title: info['title'],
-      durationSeconds: (info['duration'] as num?)?.toDouble(),
-    );
+    final response = await nativeCore.ytdlpResolveJson({'url': url});
+    // parse → SourceCandidate
   }
 }
 ```
 
-### Task 3: Switch Rust FFI yt-dlp → Dart resolver (desktop)
+### 2. NewPipeEngine — Android
 
-In `RustCoreClient` or `HomeScreen`, use `YtDlpResolver` instead of
-`nativeCore.ytdlpSearchJson()` / `nativeCore.ytdlpResolveJson()`.
-
-The Rust FFI yt-dlp endpoints become **deprecated** — kept for backward
-compatibility, not called by new code paths.
-
-## Phase 2: Android — NewPipe Extractor
-
-### Task 4: Add flutter_new_pipe_extractor dependency
-
-**File:** `frontend/pubspec.yaml`
-
-```yaml
-dependencies:
-  flutter_new_pipe_extractor: ^0.4.0
-```
-
-### Task 5: Create NewPipeResolver
-
-**File:** `frontend/lib/src/resolver/newpipe_resolver.dart`
+New: wraps `flutter_new_pipe_extractor` plugin.
 
 ```dart
-import 'package:flutter_new_pipe_extractor/flutter_new_pipe_extractor.dart';
-
-class NewPipeResolver implements TrackResolver {
-  final _extractor = NewPipeExtractor();
+class NewPipeEngine implements TrackResolver {
+  static bool get isAvailable => Platform.isAndroid;
 
   @override
-  Future<List<TrackMetadata>> search(String query, {int limit = 10}) async {
-    final results = await _extractor.search(
+  Future<List<DiscoverItem>> search(String query) async {
+    final results = await NewPipeExtractor.search(
       query,
-      filter: SearchFilter.stream,  // YouTube Music
-      contentFilter: [ContentFilter.music_songs],
+      contentFilters: [SearchContentFilters.musicSongs],
     );
-    return results.items.take(limit).map(_toTrack).toList();
+    // parse → List<DiscoverItem>
   }
 
   @override
   Future<SourceCandidate> resolve(String url) async {
-    final info = await _extractor.getStreamInfo(url);
+    final info = await NewPipeExtractor.getVideoInfo(url);
+    final stream = info.audioStreams.first;
     return SourceCandidate(
       adapter: 'newpipe',
-      url: info.audioStreams!.first.url,
+      url: stream.content,
       title: info.name,
-      durationSeconds: info.duration?.inSeconds.toDouble(),
+      durationSeconds: info.duration.toDouble(),
     );
   }
 }
 ```
 
-### Task 6: Platform resolver selection
+### 3. YouTubeExplodeEngine — Universal fallback
 
-**File:** `frontend/lib/src/resolver/resolver.dart`
+Optional. `youtube_explode_dart` is pure Dart, works everywhere with zero
+native deps. Useful if both yt-dlp and NewPipe fail.
 
 ```dart
-import 'dart:io' show Platform;
+class YouTubeExplodeEngine implements TrackResolver {
+  static bool get isAvailable => true; // always
 
-TrackResolver createResolver() {
-  if (Platform.isAndroid || Platform.isIOS) {
-    return NewPipeResolver();
-  }
-  return YtDlpResolver();
+  // Uses youtube_explode_dart package
 }
 ```
 
-Call `createResolver()` in `main.dart` and pass it down instead of routing
-through Rust FFI for search/resolve.
+## Engine selection
 
-## Phase 3: Cleanup
+No user preference UI needed. Auto-select based on platform:
 
-### Task 7: Mark Rust yt-dlp FFI as deprecated
+```dart
+TrackResolver createResolver(NativeCore nativeCore) {
+  if (Platform.isAndroid) return NewPipeEngine();
+  return YtDlpEngine(nativeCore);
+}
+```
 
-Add `#[deprecated]` to:
-- `streambox_ytdlp_search_json`
-- `streambox_ytdlp_resolve_json`
-- `streambox_ytdlp_available_json`
+Discovery stays in Rust. Only search/resolve routes through engines.
 
-Keep them compiling but add comment pointing to Dart-side resolver.
+## Implementation
 
-### Task 8: Update diagnostics
+### Phase 1: Interface + desktop (P0)
 
-`runtimeDebug().ytdlpAvailable` now checks Dart-side resolver availability:
-- Desktop: `YtDlpResolver.isAvailable()`
-- Android: `true` (NewPipe is always available)
+| # | Task | Files |
+|---|------|-------|
+| 1 | Define `TrackResolver` interface | `lib/src/resolver/track_resolver.dart` |
+| 2 | `YtDlpEngine` wraps existing Rust FFI | `lib/src/resolver/yt_dlp_engine.dart` |
+| 3 | Wire `HomeScreen` to use `TrackResolver` | `lib/src/screens/home_screen.dart` |
+| 4 | Deprecate `discoverPlayable()` on RustCoreClient | `lib/src/core/rust_core_client.dart` |
+| 5 | `pubspec.yaml` — no new deps needed | `pubspec.yaml` |
+
+### Phase 2: Android (P1)
+
+| # | Task | Files |
+|---|------|-------|
+| 6 | Add `flutter_new_pipe_extractor: ^0.4.0` | `pubspec.yaml` |
+| 7 | `NewPipeEngine` implementation | `lib/src/resolver/newpipe_engine.dart` |
+| 8 | Platform-based resolver factory | `lib/src/resolver/resolver_factory.dart` |
+| 9 | Android manifest permissions | `android/app/src/main/AndroidManifest.xml` |
+
+### Phase 3: Polish (P2)
+
+| # | Task | Files |
+|---|------|-------|
+| 10 | Add `youtube_explode_dart` fallback | `pubspec.yaml`, new engine file |
+| 11 | Update diagnostics to show active engine | `lib/src/screens/home_screen.dart` |
+| 12 | Remove old `streambox_ytdlp_*` deprecation warnings | `native/streambox_core/src/ffi.rs` |
+
+## Dependencies
+
+| Package | Size | Platform | Purpose |
+|---------|------|----------|---------|
+| `flutter_new_pipe_extractor` | ~2 MB | Android | YouTube/YouTube Music search + stream extraction |
+| `youtube_explode_dart` | ~500 KB | All | Pure Dart YouTube client (fallback) |
+| *(none new for desktop)* | 0 | Desktop | Existing Rust FFI → yt-dlp |
+
+## What stays in Rust
+
+Rust core keeps everything EXCEPT yt-dlp search/resolve. Those move to Dart
+engines. Rust still handles:
+
+- SQLite database (playlists, favorites, history)
+- Source index (FTS5)
+- MusicBrainz metadata
+- ListenBrainz popularity
+- Unified discovery (`discover()`) — uses source index + MusicBrainz only
+- Health diagnostics
+- Platform info
+
+## What moves to Dart
+
+Only two operations: `search()` and `resolve()`. These were always external
+process calls from Rust anyway — moving them to Dart puts them closer to the
+platform layer where Android can swap in NewPipe.
+
+## Rust FFI changes
+
+Remove 3 endpoints:
+- ~~`streambox_ytdlp_search_json`~~ → Dart `YtDlpEngine.search()`
+- ~~`streambox_ytdlp_resolve_json`~~ → Dart `YtDlpEngine.resolve()`
+- ~~`streambox_ytdlp_available_json`~~ → replaced by engine availability check
+
+Keep `ytdlp.rs` service module (still used by `discovery.rs` internally), but
+remove the FFI wrappers.
+
+`discover()` in `discovery.rs` currently calls yt-dlp as one phase of a
+3-phase pipeline. Update it to skip the yt-dlp phase — Dart handles
+playable search separately.
 
 ## Execution order
 
-| Task | What | Approx time |
-|------|------|-------------|
-| 1 | Add yt_dlp_dart dep | 5 min |
-| 2 | YtDlpResolver | 30 min |
-| 3 | Switch desktop calls | 20 min |
-| 4 | Add flutter_new_pipe_extractor dep | 5 min |
-| 5 | NewPipeResolver | 30 min |
-| 6 | Platform selection | 10 min |
-| 7 | Deprecate Rust FFI | 10 min |
-| 8 | Update diagnostics | 10 min |
+1. Phase 1 first (desktop-only, no new deps, 5 tasks)
+2. Test on Windows — search + resolve still work
+3. Phase 2 (Android, 4 tasks)
+4. Test on Android emulator
+5. Phase 3 (fallback engine + polish)
 
-## Comparison with previous plans
+## Test plan
 
-| Aspect | Chaquopy plan | This plan |
-|--------|--------------|-----------|
-| Android APK size | +30 MB (Python) | +2 MB (NewPipe) |
-| Android playback | yt-dlp via Python | NewPipe native Java |
-| Desktop playback | yt-dlp via Rust subprocess | yt-dlp via Dart subprocess |
-| Proven approach | No | Yes (Spotube 5K+ stars) |
-| Maintenance | Own Python bridge code | Upstream packages |
-| Complexity | High (Chaquopy + Kotlin bridge) | Low (two Dart packages) |
+- Desktop: `flutter test` — YtDlpEngine.search/resolve with mock
+- Android: emulator — NewPipeEngine.search/resolve with real API
+- Rust: `cargo test` — verify discover still works without yt-dlp phase
