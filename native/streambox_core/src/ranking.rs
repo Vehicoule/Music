@@ -86,7 +86,10 @@ pub fn normalize_title(title: &str, stop_words: &[&str]) -> String {
 pub fn cue_penalty(title: &str, cue_words: &[&str]) -> i32 {
     let title_tokens: HashSet<String> = tokenize(title).into_iter().collect();
     let cue_set: HashSet<&str> = cue_words.iter().copied().collect();
-    let unexpected: Vec<_> = title_tokens.iter().filter(|t| cue_set.contains(t.as_str())).collect();
+    let unexpected: Vec<_> = title_tokens
+        .iter()
+        .filter(|t| cue_set.contains(t.as_str()))
+        .collect();
     if unexpected.is_empty() {
         0
     } else {
@@ -184,7 +187,17 @@ mod tests {
 
     #[test]
     fn test_normalize_title() {
-        let stop_words = &["a", "an", "and", "feat", "featuring", "in", "of", "the", "to"];
+        let stop_words = &[
+            "a",
+            "an",
+            "and",
+            "feat",
+            "featuring",
+            "in",
+            "of",
+            "the",
+            "to",
+        ];
         let result = normalize_title("Bohemian Rhapsody (Live)", stop_words);
         assert_eq!(result, "bohemian rhapsody");
     }

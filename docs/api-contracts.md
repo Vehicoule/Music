@@ -1,11 +1,10 @@
 # Streambox API Contracts
 
-This document freezes the current FastAPI contract while the app migrates to a
-serverless native Rust core. FastAPI is a legacy fallback backend during this
-migration: Flutter may call Rust for migrated features and FastAPI for
-unmigrated features, but these response shapes remain the compatibility
-baseline. Do not remove a FastAPI route until Flutter no longer depends on the
-matching contract.
+This document freezes the API contract shapes originally defined by the FastAPI
+backend. FastAPI has been fully removed (2026-05-13); the Rust native core now
+serves all data through FFI using the same wire-compatible JSON shapes. These
+contracts remain the authoritative baseline for both the Rust FFI output and the
+`docs/api-contract-fixtures/` test fixtures.
 
 ## Search And Discovery
 

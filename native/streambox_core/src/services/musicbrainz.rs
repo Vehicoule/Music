@@ -229,7 +229,8 @@ fn recording_to_track(recording: Value) -> MusicBrainzTrack {
 
     let releases: Vec<Value> = recording
         .get("releases")
-        .and_then(|v| v.as_array()).cloned()
+        .and_then(|v| v.as_array())
+        .cloned()
         .unwrap_or_default();
 
     let release_count = releases.len();
@@ -980,7 +981,8 @@ mod tests {
         // Verify that the enrichment step (as used in search_tracks) gracefully
         // handles tracks with empty/invalid MBIDs without crashing
         let lb_client = ListenBrainzClient::new().unwrap();
-        let tracks = [MusicBrainzTrack {
+        let tracks = [
+            MusicBrainzTrack {
                 id: "".into(),
                 title: "Empty ID".into(),
                 artists: vec![ArtistMetadata {
@@ -1013,7 +1015,8 @@ mod tests {
                 popularity_score: None,
                 source: "musicbrainz".into(),
                 release_count: 0,
-            }];
+            },
+        ];
         // Collect MBIDs (all empty, will hit the early-return path)
         let mbid_refs: Vec<String> = tracks.iter().map(|t| t.id.clone()).collect();
         // Should return Ok with empty map (never panics, never hits network)
