@@ -203,6 +203,7 @@ class _HomeScreenState extends State<HomeScreen> {
       nativeDiagnostics = [
         health.diagnosticLabel,
         'Rust platform: ${health.platform ?? 'unknown'}',
+        _resolver is YtDlpEngine ? 'Engine: yt-dlp (desktop)' : 'Engine: NewPipe (mobile)',
         ...dbHealth.diagnosticLabels,
       ];
     });
