@@ -27,6 +27,11 @@ if (-not (Test-Path -LiteralPath $toolchainBin)) {
     throw "Android LLVM toolchain was not found at $toolchainBin"
 }
 
+$archiver = Join-Path $toolchainBin 'llvm-ar.exe'
+if (-not (Test-Path -LiteralPath $archiver)) {
+    throw "Android LLVM archiver was not found at $archiver"
+}
+
 $targets = @(
     @{
         RustTarget = 'aarch64-linux-android'
@@ -53,10 +58,15 @@ foreach ($target in $targets) {
 
     if ($target.RustTarget -eq 'aarch64-linux-android') {
         $env:CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER = $linker
+        $env:CARGO_TARGET_AARCH64_LINUX_ANDROID_AR = $archiver
     }
     elseif ($target.RustTarget -eq 'x86_64-linux-android') {
         $env:CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER = $linker
+        $env:CARGO_TARGET_X86_64_LINUX_ANDROID_AR = $archiver
     }
+
+    $env:CC = $linker
+    $env:AR = $archiver
 
     & cargo build --manifest-path $manifest --target $target.RustTarget
     if ($LASTEXITCODE -ne 0) {

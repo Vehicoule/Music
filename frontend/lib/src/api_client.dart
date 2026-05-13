@@ -50,7 +50,7 @@ class ApiClient {
     return ArtistDetail.fromJson(payload as Map<String, dynamic>);
   }
 
-  Future<ResolveResult> resolve(
+  Future<ResolveResponse> resolve(
     TrackMetadata track, {
     List<String> adapters = const [],
     String? sourceUrl,
@@ -63,7 +63,7 @@ class ApiClient {
         'source_url': sourceUrl,
       },
     );
-    return ResolveResult.fromJson(payload as Map<String, dynamic>);
+    return ResolveResponse.fromJson(payload as Map<String, dynamic>);
   }
 
   Future<List<AdapterCapability>> sources() async {
@@ -127,7 +127,7 @@ class ApiClient {
   }
 
   Future<void> unfavorite(String favoriteId) async {
-    await _delete(Uri.parse('$baseUrl/api/favorites/$favoriteId'));
+    await _deleteJson(Uri.parse('$baseUrl/api/favorites/$favoriteId'));
   }
 
   Future<void> addHistory(PlaybackItem item) async {
@@ -171,12 +171,37 @@ class ApiClient {
 
   dynamic _decode(http.Response response) {
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw ApiException('HTTP ${response.statusCode}: ${response.body}');
+      throw ApiException(
+        'HTTP ${response.statusCode}: ${_errorMessage(response.body)}',
+      );
     }
     if (response.body.isEmpty) {
       return null;
     }
-    return jsonDecode(response.body);
+    try {
+      return jsonDecode(response.body);
+    } on FormatException catch (error) {
+      throw ApiException('Invalid JSON response: $error');
+    }
+  }
+
+  String _errorMessage(String body) {
+    try {
+      final payload = jsonDecode(body);
+      if (payload is Map && payload.containsKey('detail')) {
+        return _readableErrorDetail(payload['detail']);
+      }
+    } on FormatException {
+      // Fall through to returning the raw response body.
+    }
+    return body;
+  }
+
+  String _readableErrorDetail(Object? detail) {
+    if (detail is String) {
+      return detail;
+    }
+    return jsonEncode(detail);
   }
 }
 
