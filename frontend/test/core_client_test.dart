@@ -89,15 +89,17 @@ void main() {
         );
       }),
     );
+    // With FastAPI removed, discover goes through Rust FFI.
+    // Provide a NativeCore that returns the expected discover response.
+    final nativeCore = _SourceIndexNativeCore({
+      'ok': true,
+      'data': {'items': [], 'warnings': []},
+    });
+    final rustClient = RustCoreClient(nativeCore: nativeCore);
     final coreClient = HybridCoreClient(
       apiClient: apiClient,
-      nativeCore: const StaticNativeCore(
-        NativeCoreHealth(
-          available: true,
-          version: 'streambox-core 0.1.0',
-          platform: 'test',
-        ),
-      ),
+      nativeCore: nativeCore,
+      rustCoreClient: rustClient,
     );
 
     final response = await coreClient.discover('bella', scope: 'songs');
@@ -126,7 +128,6 @@ void main() {
 
   test('rust core client exposes native echo json protocol', () async {
     final rustClient = RustCoreClient(
-      fallbackApiClient: ApiClient(baseUrl: 'http://127.0.0.1:8000'),
       nativeCore: const StaticNativeCore(
         NativeCoreHealth(
           available: true,
@@ -147,30 +148,25 @@ void main() {
       'ok': true,
       'data': [
         {
-          'source_provider': 'youtube',
-          'source_id': 'abc123',
-          'source_url': 'https://music.youtube.com/watch?v=abc123',
-          'source_kind': 'song',
-          'title': 'Cached Song',
-          'artist': 'Cached Artist',
-          'album': 'Cached Album',
-          'duration_seconds': 180,
-          'confidence_score': 95,
-          'rank_reason': 'exact',
-          'raw_title': 'Cached Song - Cached Artist',
-          'canonical_title': 'Cached Song',
-          'canonical_artist': 'Cached Artist',
-          'parse_source': 'structured',
+          'mode': 'stream',
+          'kind': 'song',
+          'label': 'Source index',
+          'track': {
+            'id': 'youtube:abc123',
+            'title': 'Cached Song',
+            'artists': [{'name': 'Cached Artist'}],
+            'length_ms': 180000,
+            'artwork_url': null,
+            'source_provider': 'youtube',
+            'source_id': 'abc123',
+            'source_url': 'https://music.youtube.com/watch?v=abc123',
+            'source_kind': 'song',
+            'source': 'youtube',
+          },
         },
       ],
     });
     final rustClient = RustCoreClient(
-      fallbackApiClient: ApiClient(
-        baseUrl: 'http://127.0.0.1:8000',
-        httpClient: MockClient((request) async {
-          fail('FastAPI should not be called for a high-confidence cache hit');
-        }),
-      ),
       nativeCore: nativeCore,
     );
 
@@ -180,7 +176,7 @@ void main() {
     expect(item.track?.title, 'Cached Song');
     expect(item.track?.sourceUrl, 'https://music.youtube.com/watch?v=abc123');
     expect(item.source, isNull);
-    expect(nativeCore.searchCalls, 1);
+    expect(nativeCore.searchCalls, 0);
   });
 
   test('rust source-index is skipped for uncacheable discover scopes', () async {
@@ -188,41 +184,24 @@ void main() {
       'ok': true,
       'data': [
         {
-          'source_provider': 'youtube',
-          'source_id': 'abc123',
-          'source_url': 'https://music.youtube.com/watch?v=abc123',
-          'source_kind': 'song',
-          'title': 'Cached Song',
-          'artist': 'Cached Artist',
-          'album': 'Cached Album',
-          'duration_seconds': 180,
-          'confidence_score': 95,
-          'rank_reason': 'exact',
-          'raw_title': 'Cached Song - Cached Artist',
-          'canonical_title': 'Cached Song',
-          'canonical_artist': 'Cached Artist',
-          'parse_source': 'structured',
+          'mode': 'stream',
+          'kind': 'song',
+          'label': 'Source index',
+          'track': {
+            'id': 'youtube:abc123',
+            'title': 'Cached Song',
+            'artists': [{'name': 'Cached Artist'}],
+            'source_provider': 'youtube',
+            'source_id': 'abc123',
+            'source_url': 'https://music.youtube.com/watch?v=abc123',
+            'source_kind': 'song',
+            'source': 'youtube',
+          },
         },
       ],
     });
     final requestedScopes = <String>[];
     final rustClient = RustCoreClient(
-      fallbackApiClient: ApiClient(
-        baseUrl: 'http://127.0.0.1:8000',
-        httpClient: MockClient((request) async {
-          requestedScopes.add(request.url.queryParameters['scope']!);
-          return http.Response(
-            jsonEncode({
-              'query': request.url.queryParameters['q'],
-              'mode': 'metadata',
-              'scope': request.url.queryParameters['scope'],
-              'items': [],
-              'warnings': [],
-            }),
-            200,
-          );
-        }),
-      ),
       nativeCore: nativeCore,
     );
 
@@ -232,7 +211,7 @@ void main() {
     }
 
     expect(nativeCore.searchCalls, 0);
-    expect(requestedScopes, ['all', 'albums', 'artists']);
+    expect(requestedScopes, []);
   });
 
   test(
@@ -258,7 +237,6 @@ void main() {
       nativeCore: nativeCore,
       rustCoreClient: RustCoreClient(
         nativeCore: nativeCore,
-        fallbackApiClient: apiClient,
         databasePath: '/tmp/streambox-test.sqlite3',
       ),
       routingConfig: const CoreClientRoutingConfig(useRustLocalLibrary: true),
@@ -297,7 +275,6 @@ void main() {
       nativeCore: nativeCore,
       rustCoreClient: RustCoreClient(
         nativeCore: nativeCore,
-        fallbackApiClient: apiClient,
         databasePath: '/tmp/streambox-test.sqlite3',
       ),
       routingConfig: const CoreClientRoutingConfig(useRustLocalLibrary: true),
@@ -328,7 +305,6 @@ void main() {
     );
     final rustClient = RustCoreClient(
       nativeCore: nativeCore,
-      fallbackApiClient: ApiClient(baseUrl: 'http://127.0.0.1:8000'),
       databasePath: '/tmp/streambox-contract.sqlite3',
     );
 
@@ -385,7 +361,6 @@ void main() {
     );
     final rustClient = RustCoreClient(
       nativeCore: nativeCore,
-      fallbackApiClient: ApiClient(baseUrl: 'http://127.0.0.1:8000'),
       databasePath: '/tmp/streambox-contract.sqlite3',
     );
 
@@ -419,7 +394,6 @@ void main() {
     );
     final rustClient = RustCoreClient(
       nativeCore: nativeCore,
-      fallbackApiClient: ApiClient(baseUrl: 'http://127.0.0.1:8000'),
       databasePath: '/tmp/streambox-contract.sqlite3',
     );
 
@@ -462,7 +436,6 @@ void main() {
       nativeCore: nativeCore,
       rustCoreClient: RustCoreClient(
         nativeCore: nativeCore,
-        fallbackApiClient: apiClient,
         databasePath: '/tmp/streambox-contract.sqlite3',
       ),
       routingConfig: const CoreClientRoutingConfig(useRustLocalLibrary: true),
@@ -538,7 +511,6 @@ void main() {
       nativeCore: nativeCore,
       rustCoreClient: RustCoreClient(
         nativeCore: nativeCore,
-        fallbackApiClient: apiClient,
         databasePath: '/tmp/streambox-contract.sqlite3',
       ),
       routingConfig: const CoreClientRoutingConfig(useRustLocalLibrary: true),
@@ -598,7 +570,6 @@ void main() {
       },
     });
     final rustClient = RustCoreClient(
-      fallbackApiClient: ApiClient(baseUrl: 'http://127.0.0.1:8000'),
       nativeCore: nativeCore,
       databasePath: '/tmp/streambox-health.sqlite3',
     );
@@ -624,7 +595,6 @@ void main() {
 
   test('rust core client falls back when Rust DB health is unavailable', () async {
     final rustClient = RustCoreClient(
-      fallbackApiClient: ApiClient(baseUrl: 'http://127.0.0.1:8000'),
       nativeCore: const StaticNativeCore(
         NativeCoreHealth(available: false, error: 'missing native library'),
       ),
@@ -728,9 +698,9 @@ void main() {
 
     final playlists = await coreClient.playlists();
 
-    expect(playlists.single.id, 'api-playlist');
-    expect(rustClient.playlistsCalls, 0);
-    expect(apiCalls, 1);
+    expect(playlists.single.id, 'rust-playlist');
+    expect(rustClient.playlistsCalls, 1);
+    expect(apiCalls, 0);
   });
 
   test('hybrid core client routes createPlaylist to Rust when enabled',
@@ -1235,28 +1205,19 @@ void main() {
     await coreClient.addHistory(item);
     final history = await coreClient.history();
 
-    expect(created.id, 'api-created');
-    expect(playlist.name, 'FastAPI Update');
-    expect(favorites.single.id, 'api-favorite');
+    expect(created.id, 'rust-created');
+    expect(playlist.name, 'Rust Update');
+    expect(favorites.single.id, 'rust-favorite');
     expect(history.single.id, 'item-1');
-    expect(rustClient.createPlaylistCalls, 0);
-    expect(rustClient.updatePlaylistCalls, 0);
-    expect(rustClient.deletePlaylistCalls, 0);
-    expect(rustClient.favoritesCalls, 0);
-    expect(rustClient.favoriteCalls, 0);
-    expect(rustClient.unfavoriteCalls, 0);
-    expect(rustClient.addHistoryCalls, 0);
-    expect(rustClient.historyCalls, 0);
-    expect(apiPaths, [
-      'POST /api/playlists',
-      'PUT /api/playlists/playlist-1',
-      'DELETE /api/playlists/playlist-1',
-      'GET /api/favorites',
-      'POST /api/favorites',
-      'DELETE /api/favorites/favorite-1',
-      'POST /api/history',
-      'GET /api/history',
-    ]);
+    expect(rustClient.createPlaylistCalls, 1);
+    expect(rustClient.updatePlaylistCalls, 1);
+    expect(rustClient.deletePlaylistCalls, 1);
+    expect(rustClient.favoritesCalls, 1);
+    expect(rustClient.favoriteCalls, 1);
+    expect(rustClient.unfavoriteCalls, 1);
+    expect(rustClient.addHistoryCalls, 1);
+    expect(rustClient.historyCalls, 1);
+    expect(apiPaths, []);
   });
 }
 
@@ -1469,6 +1430,20 @@ class _SourceIndexNativeCore extends StaticNativeCore {
     searchCalls += 1;
     return searchResponse;
   }
+
+  @override
+  Future<Map<String, dynamic>> discoverJson(
+    Map<String, dynamic> input,
+  ) async {
+    final data = searchResponse['data'];
+    return {
+      'ok': true,
+      'data': {
+        'items': data is List ? data : [],
+        'warnings': <dynamic>[],
+      },
+    };
+  }
 }
 
 class _FavoritesNativeCore implements NativeCore {
@@ -1582,6 +1557,36 @@ class _FavoritesNativeCore implements NativeCore {
 
   @override
   Future<Map<String, dynamic>> sourceIndexRebuildJson(Map<String, dynamic> input) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> discoverJson(Map<String, dynamic> input) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> runtimeDebugJson(Map<String, dynamic> input) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> sourcesJson(Map<String, dynamic> input) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> ytdlpSearchJson(Map<String, dynamic> input) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> ytdlpResolveJson(Map<String, dynamic> input) async {
+    return _unsupported();
+  }
+
+  @override
+  Future<Map<String, dynamic>> ytdlpAvailableJson(Map<String, dynamic> input) async {
     return _unsupported();
   }
 
@@ -1784,6 +1789,36 @@ class _ContractNativeCore implements NativeCore {
   Future<Map<String, dynamic>> sourceIndexUpsertJson(
     Map<String, dynamic> input,
   ) async {
+    return _unsupportedResponse;
+  }
+
+  @override
+  Future<Map<String, dynamic>> discoverJson(Map<String, dynamic> input) async {
+    return _unsupportedResponse;
+  }
+
+  @override
+  Future<Map<String, dynamic>> runtimeDebugJson(Map<String, dynamic> input) async {
+    return _unsupportedResponse;
+  }
+
+  @override
+  Future<Map<String, dynamic>> sourcesJson(Map<String, dynamic> input) async {
+    return _unsupportedResponse;
+  }
+
+  @override
+  Future<Map<String, dynamic>> ytdlpSearchJson(Map<String, dynamic> input) async {
+    return _unsupportedResponse;
+  }
+
+  @override
+  Future<Map<String, dynamic>> ytdlpResolveJson(Map<String, dynamic> input) async {
+    return _unsupportedResponse;
+  }
+
+  @override
+  Future<Map<String, dynamic>> ytdlpAvailableJson(Map<String, dynamic> input) async {
     return _unsupportedResponse;
   }
 }

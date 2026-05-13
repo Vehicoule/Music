@@ -31,7 +31,6 @@ Future<void> main() async {
     nativeCore: nativeCore,
     rustCoreClient: RustCoreClient(
       nativeCore: nativeCore,
-      fallbackApiClient: apiClient,
     ),
     routingConfig: const CoreClientRoutingConfig(
       useRustLocalLibrary: useRustLocalLibrary,
