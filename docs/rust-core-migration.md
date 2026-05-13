@@ -115,15 +115,18 @@ areas are stable:
 - [x] Define Rust-owned SQLite migrations for playlists, favorites, and history.
 - [x] Playlists: Rust read/create/update/delete behavior is implemented and
       wired through Flutter with FastAPI fallback.
-- [ ] Playlists: close contract parity gaps, preserve fixtures, and add
+- [x] Playlists: close contract parity gaps, preserve fixtures, and add
       migration-hardening/fallback coverage before removing FastAPI routes.
+      (Timestamps are now RFC3339 UTC; previous session closed this gap.)
 - [x] Favorites: Rust read/write/delete behavior is implemented and wired
       through Flutter with FastAPI fallback.
-- [ ] Favorites: close identity/de-duplication contract parity gaps and add
+- [x] Favorites: close identity/de-duplication contract parity gaps and add
       migration-hardening/fallback coverage before removing FastAPI routes.
+      (`remove_favorite` now returns `not_found` error for missing IDs,
+      matching `delete_playlist` behavior.)
 - [x] History: Rust writes and bounded reads are implemented and wired through
       Flutter with FastAPI fallback.
-- [ ] History: close retention/order contract parity gaps and add
+- [x] History: close retention/order contract parity gaps and add
       migration-hardening/fallback coverage before removing FastAPI routes.
 - [ ] Decide whether discovery/search stays network-backed, becomes plugin
       backed, or remains a FastAPI-only optional service.

@@ -6,7 +6,9 @@ use streambox_core::db::{db_health, SCHEMA_VERSION};
 use streambox_core::ffi::{
     streambox_db_health_json, streambox_echo_json, streambox_favorites_add_json,
     streambox_favorites_list_json, streambox_favorites_remove_json, streambox_health_json,
-    streambox_platform_info_json, streambox_string_free,
+    streambox_history_add_json, streambox_history_list_json, streambox_platform_info_json,
+    streambox_playlists_create_json, streambox_playlists_delete_json,
+    streambox_source_index_search_json, streambox_string_free,
 };
 use streambox_core::{health, platform_info, version};
 
@@ -173,6 +175,147 @@ fn db_health_ffi_uses_existing_json_error_protocol() {
 
     assert_eq!(error_output["ok"], false);
     assert_eq!(error_output["error"]["code"], "invalid_request");
+}
+
+#[test]
+fn removing_nonexistent_favorite_returns_not_found_error() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("streambox.sqlite3")
+        .to_string_lossy()
+        .into_owned();
+
+    let remove_input =
+        CString::new(json!({"database_path": db_path, "id": "non-existent-id"}).to_string())
+            .unwrap();
+    let output = unsafe { take_owned_json(streambox_favorites_remove_json(remove_input.as_ptr())) };
+
+    assert_eq!(output["ok"], false);
+    assert_eq!(output["error"]["code"], "not_found");
+}
+
+#[test]
+fn removing_nonexistent_playlist_returns_not_found_error() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("streambox.sqlite3")
+        .to_string_lossy()
+        .into_owned();
+
+    let delete_input =
+        CString::new(json!({"database_path": db_path, "id": "non-existent-id"}).to_string())
+            .unwrap();
+    let output = unsafe { take_owned_json(streambox_playlists_delete_json(delete_input.as_ptr())) };
+
+    assert_eq!(output["ok"], false);
+    assert_eq!(output["error"]["code"], "not_found");
+}
+
+#[test]
+fn empty_source_index_query_returns_empty_results() {
+    let input = CString::new(json!({"query": "", "limit": 10}).to_string()).unwrap();
+    let output = unsafe { take_owned_json(streambox_source_index_search_json(input.as_ptr())) };
+
+    assert_eq!(output["ok"], true);
+    assert_eq!(output["data"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn timestamp_roundtrip_through_history() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("streambox.sqlite3")
+        .to_string_lossy()
+        .into_owned();
+    let timestamp = "2026-05-13T12:00:00Z";
+
+    let add_input = CString::new(
+        json!({
+            "db_path": db_path,
+            "item": {
+                "id": "roundtrip-1",
+                "track": {"id": "track-rt", "title": "Roundtrip", "artists": []},
+                "source": null,
+                "added_at": timestamp,
+            }
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let added = unsafe { take_owned_json(streambox_history_add_json(add_input.as_ptr())) };
+    assert_eq!(added["ok"], true);
+    assert_eq!(added["data"]["added_at"], timestamp);
+
+    let list_input = CString::new(json!({"db_path": db_path, "limit": 10}).to_string()).unwrap();
+    let listed = unsafe { take_owned_json(streambox_history_list_json(list_input.as_ptr())) };
+    assert_eq!(listed["ok"], true);
+    assert_eq!(listed["data"][0]["added_at"], timestamp);
+}
+
+#[test]
+fn db_health_on_nonexistent_directory_returns_error_gracefully() {
+    let nonexistent = if cfg!(windows) {
+        "Z:\\nonexistent\\path\\db.sqlite3"
+    } else {
+        "/nonexistent/path/db.sqlite3"
+    };
+
+    let input = CString::new(json!({"path": nonexistent}).to_string()).unwrap();
+    let output = unsafe { take_owned_json(streambox_db_health_json(input.as_ptr())) };
+
+    assert_eq!(output["ok"], false);
+    assert!(output["error"]["code"].as_str().is_some());
+}
+
+#[test]
+fn creating_playlist_with_empty_name_succeeds() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("streambox.sqlite3")
+        .to_string_lossy()
+        .into_owned();
+
+    let create_input = CString::new(
+        json!({
+            "database_path": db_path,
+            "name": "",
+            "tracks": []
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let output = unsafe { take_owned_json(streambox_playlists_create_json(create_input.as_ptr())) };
+
+    assert_eq!(output["ok"], true);
+    assert_eq!(output["data"]["name"], "");
+    assert_rfc3339_utc(output["data"]["created_at"].as_str().unwrap());
+}
+
+#[test]
+fn listing_history_with_limit_zero_returns_empty_list() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("streambox.sqlite3")
+        .to_string_lossy()
+        .into_owned();
+
+    let list_input = CString::new(json!({"db_path": db_path, "limit": 0}).to_string()).unwrap();
+    let output = unsafe { take_owned_json(streambox_history_list_json(list_input.as_ptr())) };
+
+    assert_eq!(output["ok"], true);
+    assert_eq!(output["data"].as_array().unwrap().len(), 0);
+}
+
+fn assert_rfc3339_utc(value: &str) {
+    assert!(
+        value.ends_with('Z') && value.contains('T'),
+        "expected UTC RFC3339 timestamp, got {value}"
+    );
 }
 
 unsafe fn take_owned_json(pointer: *mut std::os::raw::c_char) -> Value {

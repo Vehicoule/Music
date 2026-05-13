@@ -206,6 +206,55 @@ pub fn delete_playlist(path: impl AsRef<Path>, playlist_id: &str) -> Result<(), 
     }
 }
 
+/// Get a cached payload by key. Returns None if expired or missing.
+pub fn get_metadata_cache(
+    path: impl AsRef<Path>,
+    cache_key: &str,
+    ttl_seconds: i64,
+) -> Result<Option<serde_json::Value>, CoreError> {
+    let connection = open_initialized(path.as_ref())?;
+    let row = connection
+        .query_row(
+            "SELECT payload, created_at FROM metadata_cache WHERE cache_key = ?",
+            params![cache_key],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+        )
+        .optional()
+        .map_err(sql_error)?;
+    match row {
+        Some((payload, created_at)) => {
+            let now = unix_seconds()?;
+            if (now - created_at) > ttl_seconds {
+                return Ok(None); // Expired
+            }
+            let value = serde_json::from_str(&payload)
+                .map_err(|error| CoreError::new("cache_decode_failed", error.to_string()))?;
+            Ok(Some(value))
+        }
+        None => Ok(None),
+    }
+}
+
+/// Set a cached payload with current timestamp.
+pub fn set_metadata_cache(
+    path: impl AsRef<Path>,
+    cache_key: &str,
+    payload: &serde_json::Value,
+) -> Result<(), CoreError> {
+    let connection = open_initialized(path.as_ref())?;
+    let payload_str = serde_json::to_string(payload)
+        .map_err(|error| CoreError::new("cache_encode_failed", error.to_string()))?;
+    let now = unix_seconds()?;
+    connection
+        .execute(
+            "INSERT INTO metadata_cache(cache_key, payload, created_at) VALUES (?, ?, ?)
+             ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, created_at = excluded.created_at",
+            params![cache_key, payload_str, now],
+        )
+        .map_err(sql_error)?;
+    Ok(())
+}
+
 fn load_playlist(connection: &Connection, playlist_id: &str) -> Result<Playlist, CoreError> {
     let row = connection
         .query_row(
@@ -338,10 +387,14 @@ pub fn add_favorite(path: impl AsRef<Path>, item: Value) -> Result<Favorite, Cor
 
 pub fn remove_favorite(path: impl AsRef<Path>, favorite_id: &str) -> Result<(), CoreError> {
     let connection = open_initialized(path.as_ref())?;
-    connection
+    let changed = connection
         .execute("DELETE FROM favorites WHERE id = ?", params![favorite_id])
         .map_err(sql_error)?;
-    Ok(())
+    if changed == 0 {
+        Err(CoreError::new("not_found", "Favorite not found"))
+    } else {
+        Ok(())
+    }
 }
 
 pub fn upsert_source_index_entries(

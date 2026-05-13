@@ -199,3 +199,73 @@ pub struct DbHealth {
     pub user_version: i64,
     pub foreign_keys_enabled: bool,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct ArtistMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct AlbumMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub release_group_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artwork_url: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MusicBrainzTrack {
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub artists: Vec<ArtistMetadata>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub album: Option<AlbumMetadata>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub length_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub score: Option<i64>,
+    #[serde(default)]
+    pub match_reasons: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub listen_count: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub listener_count: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub popularity_score: Option<f64>,
+    #[serde(default)]
+    pub source: String,
+    #[serde(default)]
+    pub release_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PopularityStats {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub listen_count: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub listener_count: Option<i64>,
+    #[serde(default)]
+    pub score: f64,
+}
+
+impl PopularityStats {
+    pub fn compute_score(&mut self) {
+        let listeners = self.listener_count.unwrap_or(0) as f64;
+        let listens = self.listen_count.unwrap_or(0) as f64;
+        self.score = (listeners * 10.0) + listens;
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct MusicBrainzSearchRequest {
+    pub query: String,
+    #[serde(default)]
+    pub limit: usize,
+}

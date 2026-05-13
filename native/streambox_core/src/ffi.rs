@@ -11,14 +11,31 @@ use crate::db::{
 use crate::error::CoreError;
 use crate::models::{
     EchoPayload, FavoriteAddRequest, FavoriteListRequest, FavoriteRemoveRequest, HistoryAddRequest,
-    HistoryClearRequest, HistoryListRequest, SourceIndexClearRequest, SourceIndexRebuildRequest,
-    SourceIndexSearchRequest, SourceIndexUpsertRequest,
+    HistoryClearRequest, HistoryListRequest, MusicBrainzSearchRequest, SourceIndexClearRequest,
+    SourceIndexRebuildRequest, SourceIndexSearchRequest, SourceIndexUpsertRequest,
 };
+use crate::services::musicbrainz::MusicBrainzClient;
+use crate::services::ytdlp;
 use crate::{favorites, health_json, history, platform_info, playlists, version};
 
 #[derive(Debug, Deserialize)]
 struct DbHealthRequest {
     path: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct YtDlpSearchRequest {
+    query: String,
+    #[serde(default = "default_search_limit")]
+    limit: usize,
+}
+fn default_search_limit() -> usize {
+    15
+}
+
+#[derive(Debug, Deserialize)]
+struct YtDlpResolveRequest {
+    url: String,
 }
 
 #[no_mangle]
@@ -46,7 +63,7 @@ pub unsafe extern "C" fn streambox_echo_json(input_json: *const c_char) -> *mut 
 
 #[no_mangle]
 pub unsafe extern "C" fn streambox_db_health_json(input_json: *const c_char) -> *mut c_char {
-    match read_json_as::<DbHealthRequest>(input_json) {
+    match read_json::<DbHealthRequest>(input_json) {
         Ok(request) => match db_health(request.path) {
             Ok(health) => ok_json(health),
             Err(error) => error_json(error),
@@ -57,7 +74,7 @@ pub unsafe extern "C" fn streambox_db_health_json(input_json: *const c_char) -> 
 
 #[no_mangle]
 pub unsafe extern "C" fn streambox_favorites_list_json(input_json: *const c_char) -> *mut c_char {
-    match read_json_as::<FavoriteListRequest>(input_json) {
+    match read_json::<FavoriteListRequest>(input_json) {
         Ok(request) => match favorites::list_favorites(request.database_path) {
             Ok(items) => ok_json(items),
             Err(error) => error_json(error),
@@ -68,7 +85,7 @@ pub unsafe extern "C" fn streambox_favorites_list_json(input_json: *const c_char
 
 #[no_mangle]
 pub unsafe extern "C" fn streambox_favorites_add_json(input_json: *const c_char) -> *mut c_char {
-    match read_json_as::<FavoriteAddRequest>(input_json) {
+    match read_json::<FavoriteAddRequest>(input_json) {
         Ok(request) => match favorites::add_favorite(request.database_path, request.item) {
             Ok(item) => ok_json(item),
             Err(error) => error_json(error),
@@ -79,7 +96,7 @@ pub unsafe extern "C" fn streambox_favorites_add_json(input_json: *const c_char)
 
 #[no_mangle]
 pub unsafe extern "C" fn streambox_favorites_remove_json(input_json: *const c_char) -> *mut c_char {
-    match read_json_as::<FavoriteRemoveRequest>(input_json) {
+    match read_json::<FavoriteRemoveRequest>(input_json) {
         Ok(request) => match favorites::remove_favorite(request.database_path, &request.id) {
             Ok(()) => ok_json(json!({})),
             Err(error) => error_json(error),
@@ -134,7 +151,7 @@ pub unsafe extern "C" fn streambox_playlists_delete_json(input_json: *const c_ch
 
 #[no_mangle]
 pub unsafe extern "C" fn streambox_history_list_json(input_json: *const c_char) -> *mut c_char {
-    match read_json_as::<HistoryListRequest>(input_json) {
+    match read_json::<HistoryListRequest>(input_json) {
         Ok(request) => match history::list_history(request.db_path.as_deref(), request.limit) {
             Ok(items) => ok_json(items),
             Err(error) => error_json(error),
@@ -145,7 +162,7 @@ pub unsafe extern "C" fn streambox_history_list_json(input_json: *const c_char) 
 
 #[no_mangle]
 pub unsafe extern "C" fn streambox_history_add_json(input_json: *const c_char) -> *mut c_char {
-    match read_json_as::<HistoryAddRequest>(input_json) {
+    match read_json::<HistoryAddRequest>(input_json) {
         Ok(request) => match history::add_history(request.db_path.as_deref(), request.item) {
             Ok(item) => ok_json(item),
             Err(error) => error_json(error),
@@ -156,7 +173,7 @@ pub unsafe extern "C" fn streambox_history_add_json(input_json: *const c_char) -
 
 #[no_mangle]
 pub unsafe extern "C" fn streambox_history_clear_json(input_json: *const c_char) -> *mut c_char {
-    match read_json_as::<HistoryClearRequest>(input_json) {
+    match read_json::<HistoryClearRequest>(input_json) {
         Ok(request) => match history::clear_history(request.db_path.as_deref()) {
             Ok(()) => ok_json(json!({})),
             Err(error) => error_json(error),
@@ -169,7 +186,7 @@ pub unsafe extern "C" fn streambox_history_clear_json(input_json: *const c_char)
 pub unsafe extern "C" fn streambox_source_index_search_json(
     input_json: *const c_char,
 ) -> *mut c_char {
-    match read_json_as::<SourceIndexSearchRequest>(input_json) {
+    match read_json::<SourceIndexSearchRequest>(input_json) {
         Ok(request) => {
             let path = request
                 .database_path
@@ -193,7 +210,7 @@ pub unsafe extern "C" fn streambox_source_index_search_json(
 pub unsafe extern "C" fn streambox_source_index_upsert_json(
     input_json: *const c_char,
 ) -> *mut c_char {
-    match read_json_as::<SourceIndexUpsertRequest>(input_json) {
+    match read_json::<SourceIndexUpsertRequest>(input_json) {
         Ok(request) => {
             let path = request
                 .database_path
@@ -212,7 +229,7 @@ pub unsafe extern "C" fn streambox_source_index_upsert_json(
 pub unsafe extern "C" fn streambox_source_index_clear_json(
     input_json: *const c_char,
 ) -> *mut c_char {
-    match read_json_as::<SourceIndexClearRequest>(input_json) {
+    match read_json::<SourceIndexClearRequest>(input_json) {
         Ok(request) => {
             let path = request
                 .database_path
@@ -231,7 +248,7 @@ pub unsafe extern "C" fn streambox_source_index_clear_json(
 pub unsafe extern "C" fn streambox_source_index_rebuild_json(
     input_json: *const c_char,
 ) -> *mut c_char {
-    match read_json_as::<SourceIndexRebuildRequest>(input_json) {
+    match read_json::<SourceIndexRebuildRequest>(input_json) {
         Ok(request) => {
             let path = request
                 .database_path
@@ -247,6 +264,66 @@ pub unsafe extern "C" fn streambox_source_index_rebuild_json(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn streambox_musicbrainz_search_json(
+    input_json: *const c_char,
+) -> *mut c_char {
+    match read_json::<MusicBrainzSearchRequest>(input_json) {
+        Ok(request) => {
+            let limit = if request.limit == 0 {
+                15
+            } else {
+                request.limit
+            };
+            match MusicBrainzClient::new() {
+                Ok(mut client) => match client.search_tracks(&request.query, limit) {
+                    Ok(tracks) => ok_json(tracks),
+                    Err(error) => error_json(error),
+                },
+                Err(error) => error_json(error),
+            }
+        }
+        Err(error) => error_json(error),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn streambox_ytdlp_search_json(input_json: *const c_char) -> *mut c_char {
+    match read_json::<YtDlpSearchRequest>(input_json) {
+        Ok(request) => {
+            let limit = if request.limit == 0 {
+                15
+            } else {
+                request.limit
+            };
+            match ytdlp::search(&request.query, limit) {
+                Ok(tracks) => ok_json(tracks),
+                Err(error) => error_json(error),
+            }
+        }
+        Err(error) => error_json(error),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn streambox_ytdlp_resolve_json(input_json: *const c_char) -> *mut c_char {
+    match read_json::<YtDlpResolveRequest>(input_json) {
+        Ok(request) => match ytdlp::resolve_url(&request.url) {
+            Ok(track) => ok_json(track),
+            Err(error) => error_json(error),
+        },
+        Err(error) => error_json(error),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn streambox_ytdlp_available_json(input_json: *const c_char) -> *mut c_char {
+    // input_json is ignored; yt-dlp availability is a global check
+    let _ = input_json;
+    let available = ytdlp::is_available();
+    ok_json(json!({ "available": available }))
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn streambox_string_free(value: *mut c_char) {
     if !value.is_null() {
         let _ = CString::from_raw(value);
@@ -254,11 +331,6 @@ pub unsafe extern "C" fn streambox_string_free(value: *mut c_char) {
 }
 
 fn read_json<T: serde::de::DeserializeOwned>(input_json: *const c_char) -> Result<T, CoreError> {
-    let value = read_json_value(input_json)?;
-    serde_json::from_value(value).map_err(|error| CoreError::new("invalid_json", error.to_string()))
-}
-
-fn read_json_as<T: for<'de> Deserialize<'de>>(input_json: *const c_char) -> Result<T, CoreError> {
     let value = read_json_value(input_json)?;
     serde_json::from_value(value)
         .map_err(|error| CoreError::new("invalid_request", error.to_string()))
